@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Hook entrypoint. Called by agent adapters on lifecycle events.
+# Usage: tmux-ai-notify <event> <pane_id> [k=v ...]
+#
+# Intentionally swallows errors so a broken hook cannot freeze the agent.
+
+set -u
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/state.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/config.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/notify.sh"
+
+main() {
+  local event="${1:-}" pane="${2:-}"
+  [ -n "$event" ] && [ -n "$pane" ] || { tmux_ai_log "notify: missing args"; return 0; }
+  shift 2 || true
+
+  local agent project now
+  agent="$(state_get "$pane" agent)"
+  project="$(state_get "$pane" project)"
+  now="$(date +%s)"
+
+  case "$event" in
+    session_start)
+      state_set "$pane" state idle
+      state_set "$pane" last_byte_ts "$now"
+      ;;
+    prompt_submit)
+      state_set "$pane" state working
+      state_set "$pane" turn_started_ts "$now"
+      state_set "$pane" last_byte_ts "$now"
+      ;;
+    stop)
+      state_set "$pane" state done
+      state_set "$pane" last_byte_ts "$now"
+      notify_desktop "${agent:-agent} — done" "${project:-(unknown project)}"
+      notify_sound done
+      notify_push "${agent:-agent} — done" "${project:-(unknown project)}"
+      ;;
+    notification)
+      state_set "$pane" state waiting
+      state_set "$pane" last_byte_ts "$now"
+      notify_desktop "${agent:-agent} — needs input" "${project:-(unknown project)}"
+      notify_sound waiting
+      notify_push "${agent:-agent} — needs input" "${project:-(unknown project)}"
+      ;;
+    stuck)
+      state_set "$pane" state stuck
+      notify_desktop "${agent:-agent} — stuck" "${project:-(unknown project)}"
+      notify_sound stuck
+      ;;
+    pane_exited)
+      state_unregister "$pane"
+      ;;
+    *)
+      tmux_ai_log "notify: unknown event '$event' for pane $pane"
+      ;;
+  esac
+  return 0
+}
+
+{ main "$@"; } 2>>"$XDG_STATE_HOME/tmux-ai/tmux-ai.log" || true
+exit 0
