@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Recording tmux stub for unit tests.
+# - Appends each call as one space-joined line to $TMUX_STUB_CALLS
+# - Emits canned output from $TMUX_STUB_RESPONSES where the first
+#   line matches "<subcommand>::<output>"
+
+set -u
+calls="${TMUX_STUB_CALLS:-/dev/null}"
+responses="${TMUX_STUB_RESPONSES:-/dev/null}"
+
+# Record the call
+printf '%s\n' "$*" >> "$calls" 2>/dev/null || true
+
+# Lookup canned response by subcommand (first arg)
+if [ -f "$responses" ] && [ $# -gt 0 ]; then
+  while IFS= read -r line; do
+    key="${line%%::*}"
+    rest="${line#*::}"
+    if [ "$key" = "$1" ]; then
+      printf '%s\n' "$rest"
+      exit 0
+    fi
+  done < "$responses"
+fi
+
+exit 0
