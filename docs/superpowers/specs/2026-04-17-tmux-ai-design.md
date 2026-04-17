@@ -145,17 +145,20 @@ tmux-ai spawn claude           ← user picks agent
 
 | Binding | Action |
 |---|---|
-| `prefix + A` | Spawn-agent menu (pick claude/opencode, opens pane in current project dir) |
+| `prefix + A` | Spawn-agent menu: choose agent (claude/opencode) and target — **new pane in this session** (quick) or **new project session with layout** (feature 1). |
 | `prefix + a` | Toggle dashboard popup |
 | `prefix + j` | Jump-to-agent (fzf picker across sessions, jumps to pane) |
 | `prefix + D` | Toggle Do-Not-Disturb |
 | `prefix + L` | Open current pane's agent log in `$PAGER` |
 
+**"Current project dir" is defined as:** the git top-level of the invoking pane's cwd (`git -C "$PWD" rev-parse --show-toplevel`); if the pane is not inside a git repo, falls back to the pane's cwd. This definition is used wherever the spec says "project dir".
+
 ### 5.2 Status-line segment
 
 User appends `#(tmux-ai-status)` to their `status-right`:
 
-- **Aggregated:** when > 3 agents — `AI: 2⚙ 1⏸ 3✓` (working / waiting / done-unacked).
+- **≤ 3 agents:** inline icon + short project tag per agent, e.g. `⚙ foo ⏸ bar ✓ baz`.
+- **> 3 agents:** aggregated counters — `AI: 2⚙ 1⏸ 3✓` (working / waiting / done-unacked). Threshold configurable.
 - **Per-window tab prefix:** optional `window-status-format` override to prefix the window name with the current agent icon (e.g. `⚙ cc:foo`).
 - **Colors:** working=yellow, waiting=magenta (attention), done=green, stuck=red, error=red-bold.
 - **Mouse-click jump:** supported when `mouse on` is set in tmux config. Documented as optional.
@@ -222,11 +225,11 @@ spawn_command = "opencode"
 
 | # | Feature | Implementation summary |
 |---|---|---|
-| 1 | **Project session templates** | `prefix + A` → shell function reads current dir's git root, creates `tmux new-session -s <reponame>` with a 3-pane layout (editor left 60%, agent top-right, terminal bottom-right). Hard-coded layout script, no templating engine. |
+| 1 | **Project session templates** | Selected from the `prefix + A` menu's "new project session" option. Reads the project dir (defined in §5.1), creates `tmux new-session -s <reponame>` with a 3-pane layout: editor left 60%, agent top-right, terminal bottom-right. Hard-coded layout script, no templating engine. The agent pane is spawned through the same path as the "new pane in this session" option, so registration and hooks are identical. |
 | 2 | **Quick-attach / fuzzy jump** | `tmux-ai jump` pipes `agents.json` through `fzf` (preview = last 20 pane lines), selection runs `tmux switch-client` + `select-pane`. |
 | 3 | **tmux-resurrect-aware** | On tmux start, `tmux-ai reconcile` compares `agents.json` against live panes. Missing panes → marked `error`, retained 1h for UI visibility, then purged. Does NOT re-spawn agents — tmux-resurrect handles layouts, not live CLI state. |
 | 4 | **Pane output capture** | At spawn time: `tmux pipe-pane -o -t <pane> "cat >> $LOGFILE"`. Path recorded in registry. One file per spawn, gzipped after pane close. |
-| 5 | **Stuck detection** | `tmux-ai-detect` tick: if `state=working` and last-byte-timestamp older than `stuck_after_seconds` → transition to `stuck`, fire one notification, don't re-fire. |
+| 5 | **Stuck detection** | `tmux-ai-detect` tick: if `state=working` and last-byte-timestamp older than `stuck_after_seconds` → transition to `stuck`, fire one notification. Re-entry policy: if state later returns to `working` and becomes stuck again, that is a **new** stuck episode and notifies again. Staying continuously in `stuck` does not re-fire. |
 | 7 | **Last-message peek** | Dashboard runs `tmux capture-pane -p | grep -v '^\s*$' | tail -n 1` per row. Cheap at 1Hz for < 20 agents. |
 | 9 | **Do-Not-Disturb** | `prefix + D` toggles `$XDG_RUNTIME_DIR/tmux-ai/dnd.flag`. `tmux-ai-notify` checks flag before emitting desktop/sound/push. Auto-clears after 2h to prevent perma-silence. |
 | 12 | **Bulk actions in dashboard** | Multi-select in popup → `k` kills (`tmux send-keys C-c`, then close pane after grace period), `r` restarts (kill + respawn via stored adapter/cwd), `l` tails log. |
