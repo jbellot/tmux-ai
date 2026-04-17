@@ -1,0 +1,10 @@
+# editor
+*.swp
+.DS_Store
+# runtime state (shouldn't end up in repo, but belt+braces)
+*.log
+*.corrupt.*
+# bats installation
+tests/bats-core/
+tests/bats-assert/
+tests/bats-support/
