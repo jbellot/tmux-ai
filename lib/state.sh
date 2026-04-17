@@ -5,9 +5,6 @@
 _state_file() { printf '%s/agents.json\n' "$(tmux_ai_runtime_dir)"; }
 _state_lock() { printf '%s/agents.json.lock\n' "$(tmux_ai_runtime_dir)"; }
 
-# Export path helpers so subshells (e.g. `run bash -c '...'` in tests) can use them.
-export -f tmux_ai_runtime_dir tmux_ai_state_dir tmux_ai_log 2>/dev/null || true
-
 # Move a corrupt state file aside and log. Returns 0 so callers can continue.
 _state_recover() {
   local f ts

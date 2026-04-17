@@ -67,7 +67,7 @@ setup() {
   run jq -r '."%9".agent' "$(tmux_ai_runtime_dir)/agents.json"
   assert_output "claude"
   # corrupt file should have been moved aside
-  run bash -c 'ls "$(tmux_ai_runtime_dir)"/agents.json.corrupt.* 2>/dev/null | wc -l'
+  run bash -c "ls '$(tmux_ai_runtime_dir)'/agents.json.corrupt.* 2>/dev/null | wc -l"
   assert_output "1"
 }
 
