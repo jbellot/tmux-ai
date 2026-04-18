@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -u
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/state.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/config.sh"
+
+ICON_WORK="⚙"
+ICON_WAIT="⏸"
+ICON_DONE="✓"
+ICON_STUCK="✗"
+ICON_ERROR="!"
+
+icon_for() {
+  case "$1" in
+    working) printf '%s' "$ICON_WORK" ;;
+    waiting) printf '%s' "$ICON_WAIT" ;;
+    done)    printf '%s' "$ICON_DONE" ;;
+    stuck)   printf '%s' "$ICON_STUCK" ;;
+    error)   printf '%s' "$ICON_ERROR" ;;
+    *)       printf '·' ;;
+  esac
+}
+
+render() {
+  state_init
+  local file count threshold
+  file="$(_state_file)"
+  count=$(jq 'length' "$file" 2>/dev/null || echo 0)
+  threshold=$(config_get status inline_threshold 3)
+
+  [ "$count" -eq 0 ] && return 0
+
+  if [ "$count" -le "$threshold" ]; then
+    # inline: "⚙ foo ⏸ bar ✓ baz"
+    local out=""
+    while IFS= read -r entry; do
+      local project state
+      project=$(echo "$entry" | jq -r '.project // "?"')
+      state=$(echo "$entry"   | jq -r '.state // "idle"')
+      out="${out}$(icon_for "$state") ${project} "
+    done < <(jq -c '.[]' "$file")
+    printf '%s' "${out% }"
+  else
+    # aggregated: "AI: 2⚙ 1⏸ 3✓"
+    local w wa d s
+    w=$(jq  '[.[] | select(.state=="working")] | length' "$file")
+    wa=$(jq '[.[] | select(.state=="waiting")] | length' "$file")
+    d=$(jq  '[.[] | select(.state=="done")] | length'    "$file")
+    s=$(jq  '[.[] | select(.state=="stuck")] | length'   "$file")
+    local parts=()
+    [ "$w"  -gt 0 ] && parts+=("${w}${ICON_WORK}")
+    [ "$wa" -gt 0 ] && parts+=("${wa}${ICON_WAIT}")
+    [ "$d"  -gt 0 ] && parts+=("${d}${ICON_DONE}")
+    [ "$s"  -gt 0 ] && parts+=("${s}${ICON_STUCK}")
+    printf 'AI: %s' "${parts[*]}"
+  fi
+}
+
+mkdir -p "$XDG_STATE_HOME/tmux-ai" 2>/dev/null || true
+{
+  render
+  # Kick a detect tick in the background so stuck detection + GC run on
+  # every status-interval without a separate daemon. Suppressed in tests
+  # via TMUX_AI_STATUS_NO_DETECT.
+  if [ -z "${TMUX_AI_STATUS_NO_DETECT:-}" ]; then
+    "$(dirname "$0")/tmux-ai-detect" </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+  fi
+} 2>>"$XDG_STATE_HOME/tmux-ai/tmux-ai.log" || true
+exit 0
