@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -u
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
+TMUX_AI_ADAPTERS="${TMUX_AI_ADAPTERS:-$(cd "$(dirname "$0")/../adapters" && pwd)}"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/state.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/config.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_ADAPTERS/generic.sh"
+
+export TMUX_AI_NOTIFY_BIN="${TMUX_AI_NOTIFY_BIN:-$(cd "$(dirname "$0")" && pwd)/tmux-ai-notify}"
+
+KNOWN_AGENTS_RE='^(claude|opencode)$'
+
+auto_detect() {
+  # tmux list-panes -a -F "#{pane_id} #{pane_current_command} #{pane_current_path} #{window_name} #{window_index}.#{pane_index} #{session_name}"
+  local line pane cmd cwd win idx sess project
+  while IFS=' ' read -r pane cmd cwd win idx sess; do
+    [ -n "$pane" ] || continue
+    [[ "$cmd" =~ $KNOWN_AGENTS_RE ]] || continue
+    # Skip if already registered
+    if jq -e --arg p "$pane" 'has($p)' "$(tmux_ai_runtime_dir)/agents.json" >/dev/null 2>&1; then
+      continue
+    fi
+    project="$(basename "$cwd")"
+    state_register "$pane" \
+      agent="$cmd" \
+      project="$project" \
+      cwd="$cwd" \
+      window="$win" \
+      pane_index="$idx" \
+      session="$sess" \
+      state=idle \
+      adapter=generic \
+      last_byte_count=0 \
+      last_byte_ts="$(date +%s)"
+    tmux_ai_log "detect: auto-registered $pane ($cmd in $project)"
+  done < <(tmux list-panes -a -F "#{pane_id} #{pane_current_command} #{pane_current_path} #{window_name} #{window_index}.#{pane_index} #{session_name}" 2>/dev/null)
+}
+
+tick_all() {
+  local pane adapter
+  while IFS= read -r pane; do
+    [ -n "$pane" ] || continue
+    adapter="$(state_get "$pane" adapter)"
+    case "$adapter" in
+      generic) generic_tick "$pane" ;;
+      *) : ;;  # hook-driven adapters update state on their own
+    esac
+  done < <(state_list)
+}
+
+# Remove registry entries for panes tmux no longer knows about.
+gc_dead_panes() {
+  local live_panes_file pane
+  live_panes_file="$(mktemp)"
+  tmux list-panes -a -F '#{pane_id}' 2>/dev/null > "$live_panes_file" || true
+  while IFS= read -r pane; do
+    [ -n "$pane" ] || continue
+    if ! grep -qE "^${pane}([[:space:]]|$)" "$live_panes_file"; then
+      "$TMUX_AI_NOTIFY_BIN" pane_exited "$pane" 2>/dev/null || true
+    fi
+  done < <(state_list)
+  rm -f "$live_panes_file"
+}
+
+main() {
+  state_init
+  gc_dead_panes
+  auto_detect
+  tick_all
+}
+
+# Ensure log directory exists before the redirect below tries to open it.
+mkdir -p "$XDG_STATE_HOME/tmux-ai" 2>/dev/null || true
+
+{ main "$@"; } 2>>"$XDG_STATE_HOME/tmux-ai/tmux-ai.log" || true
+exit 0
