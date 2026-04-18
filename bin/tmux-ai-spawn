@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -u
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
+TMUX_AI_ADAPTERS="${TMUX_AI_ADAPTERS:-$(cd "$(dirname "$0")/../adapters" && pwd)}"
+TMUX_AI_NOTIFY_BIN="${TMUX_AI_NOTIFY_BIN:-$(cd "$(dirname "$0")" && pwd)/tmux-ai-notify}"
+export TMUX_AI_NOTIFY_BIN
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/state.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/config.sh"
+
+project_dir() {
+  local d
+  d="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
+  printf '%s\n' "$d"
+}
+
+log_path_for() {
+  local project="$1"
+  local dir
+  dir="$(tmux_ai_state_dir)/logs/$project"
+  mkdir -p "$dir"
+  printf '%s/%s.log\n' "$dir" "$(date +%Y%m%d-%H%M%S)"
+}
+
+main() {
+  local agent="${1:-claude}"
+  case "$agent" in
+    claude)
+      # shellcheck source=/dev/null
+      source "$TMUX_AI_ADAPTERS/claude.sh"
+      local adapter_name="claude"
+      local spawn_cmd; spawn_cmd="$(claude_spawn_cmd)"
+      ;;
+    *)
+      echo "unknown agent: $agent" >&2
+      exit 2
+      ;;
+  esac
+
+  local pdir project pane settings logfile env_str
+  pdir="$(project_dir)"
+  project="$(basename "$pdir")"
+
+  # Create the pane first so we know its id
+  pane=$(tmux split-window -h -c "$pdir" -P -F '#{pane_id}' 2>/dev/null || echo "")
+  [ -n "$pane" ] || { echo "failed to create pane" >&2; exit 1; }
+
+  # Register in state
+  state_init
+  state_register "$pane" \
+    agent="$agent" \
+    project="$project" \
+    cwd="$pdir" \
+    adapter="$adapter_name" \
+    state=idle \
+    last_byte_count=0 \
+    last_byte_ts="$(date +%s)"
+
+  # Install hooks
+  settings="$(claude_register_hooks "$pane")"
+  env_str="$(claude_spawn_env "$pane")"
+
+  # Start log capture
+  logfile="$(log_path_for "$project")"
+  state_set "$pane" logfile "$logfile"
+  tmux pipe-pane -o -t "$pane" "cat >> '$logfile'" 2>/dev/null || true
+
+  # Launch the agent with env set
+  # Use send-keys so the env takes effect in the pane's shell
+  tmux send-keys -t "$pane" "$env_str clear; $spawn_cmd" C-m 2>/dev/null || true
+
+  tmux_ai_log "spawn: pane=$pane agent=$agent project=$project"
+  echo "$pane"
+}
+
+main "$@"
