@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -u
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+
+flag="$(tmux_ai_runtime_dir)/dnd.flag"
+case "${1:-toggle}" in
+  on)     touch "$flag" ;;
+  off)    rm -f "$flag" ;;
+  toggle) [ -f "$flag" ] && rm -f "$flag" || touch "$flag" ;;
+  status) [ -f "$flag" ] && echo on || echo off ;;
+  *) echo "usage: tmux-ai-dnd on|off|toggle|status" >&2; exit 2 ;;
+esac
+exit 0
