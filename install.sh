@@ -17,6 +17,33 @@ BIN_SCRIPTS=(
   tmux-ai-dnd
 )
 
+DEPS=(bash tmux jq flock fzf)
+
+do_check() {
+  local missing=()
+  for d in "${DEPS[@]}"; do
+    command -v "$d" >/dev/null 2>&1 || missing+=("$d")
+  done
+  # notify-send OR osascript OR terminal-notifier satisfies the desktop dep
+  if ! command -v notify-send >/dev/null 2>&1 \
+    && ! command -v osascript >/dev/null 2>&1 \
+    && ! command -v terminal-notifier >/dev/null 2>&1; then
+    missing+=("notify-send|osascript|terminal-notifier")
+  fi
+  if [ "${#missing[@]}" -eq 0 ]; then
+    echo "all dependencies satisfied"
+    return 0
+  fi
+  echo "missing dependencies:" >&2
+  for m in "${missing[@]}"; do echo "  - $m" >&2; done
+  echo >&2
+  echo "Install hints:" >&2
+  echo "  Debian/Ubuntu: sudo apt install jq util-linux fzf libnotify-bin tmux" >&2
+  echo "  Fedora:        sudo dnf install jq util-linux fzf libnotify tmux" >&2
+  echo "  macOS (brew):  brew install jq fzf tmux terminal-notifier" >&2
+  return 1
+}
+
 MARKER_BEGIN='# >>> tmux-ai >>>'
 MARKER_END='# <<< tmux-ai <<<'
 
@@ -74,7 +101,8 @@ do_uninstall() {
 }
 
 case "${1:-install}" in
-  install|'') do_install ;;
+  install|'') do_check || true; do_install ;;
+  --check|check) do_check ;;
   --uninstall|uninstall) do_uninstall ;;
-  *) echo "usage: install.sh [install|--uninstall]" >&2; exit 2 ;;
+  *) echo "usage: install.sh [install|--check|--uninstall]" >&2; exit 2 ;;
 esac
