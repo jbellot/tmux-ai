@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -u
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$BIN_DIR/../lib" && pwd)}"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/state.sh"
+
+usage() {
+  cat <<EOF
+usage: tmux-ai <command> [args]
+
+Commands:
+  spawn <agent>         Launch agent in a new pane (phase 1: agent=claude)
+  dash                  Open the popup dashboard
+  dnd [on|off|toggle]   Do-Not-Disturb toggle
+  status                Emit status-line segment (for tmux status-right)
+  detect                Run a detect tick (stuck + auto-register)
+  list                  Print registered agents as a table
+  log <pane_id>         Open the agent log for <pane_id> in \$PAGER
+  help                  Show this message
+EOF
+}
+
+cmd_list() {
+  state_init
+  local file; file="$(_state_file)"
+  local count; count=$(jq 'length' "$file" 2>/dev/null || echo 0)
+  if [ "$count" -eq 0 ]; then
+    echo "(no agents registered)"
+    return 0
+  fi
+  printf '%-8s  %-8s  %-15s  %s\n' "PANE" "AGENT" "PROJECT" "STATE"
+  jq -r 'to_entries[] | [.key, .value.agent, .value.project, .value.state] | @tsv' "$file" \
+    | awk -F'\t' '{printf "%-8s  %-8s  %-15s  %s\n", $1, $2, $3, $4}'
+}
+
+cmd_log() {
+  local pane="${1:-}"
+  [ -n "$pane" ] || { echo "usage: tmux-ai log <pane_id>" >&2; exit 2; }
+  state_init
+  local logfile
+  logfile="$(state_get "$pane" logfile)"
+  if [ -z "$logfile" ]; then
+    echo "no log registered for pane $pane" >&2
+    exit 1
+  fi
+  # Print the path first (used by tests and useful to the user), then pager.
+  echo "$logfile"
+  if [ -t 1 ] && [ -f "$logfile" ]; then
+    "${PAGER:-less}" "$logfile"
+  fi
+}
+
+case "${1:-help}" in
+  spawn)  shift; exec "$BIN_DIR/tmux-ai-spawn"  "$@" ;;
+  dash)   shift; exec "$BIN_DIR/tmux-ai-dash"   "$@" ;;
+  dnd)    shift; exec "$BIN_DIR/tmux-ai-dnd"    "$@" ;;
+  status) shift; exec "$BIN_DIR/tmux-ai-status" "$@" ;;
+  detect) shift; exec "$BIN_DIR/tmux-ai-detect" "$@" ;;
+  list)   cmd_list ;;
+  log)    shift; cmd_log "$@" ;;
+  help|-h|--help) usage ;;
+  *) echo "usage: tmux-ai <command>; tmux-ai help for details" >&2; exit 2 ;;
+esac
