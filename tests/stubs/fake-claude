@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Scripted fake agent. Reads event names from stdin; for each, invokes
+# tmux-ai-notify (path from $TMUX_AI_NOTIFY_BIN) with the pane id
+# from $TMUX_PANE.
+
+set -u
+: "${TMUX_AI_NOTIFY_BIN:?must be set}"
+: "${TMUX_PANE:?must be set}"
+
+# Fire session_start immediately on launch
+"$TMUX_AI_NOTIFY_BIN" session_start "$TMUX_PANE"
+
+while IFS= read -r event; do
+  [ -n "$event" ] || continue
+  "$TMUX_AI_NOTIFY_BIN" "$event" "$TMUX_PANE"
+done
