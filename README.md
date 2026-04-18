@@ -1,6 +1,77 @@
 # tmux-ai
 
-A modular tmux layer for managing AI coding agents. See
-`docs/superpowers/specs/2026-04-17-tmux-ai-design.md` for full design.
+A modular tmux layer for managing AI coding agents. Phase 1 supports
+Claude Code; opencode and multi-agent workflow features arrive in
+Phase 2.
 
-Installation and usage docs land in Task 24.
+## What you get
+
+- **Status-line indicators** — see every agent's state across sessions
+  without leaving the current pane.
+- **Popup dashboard** (`prefix + a`) — full table of every registered
+  agent with state, project, window/pane, and elapsed time.
+- **Desktop notifications** when an agent finishes a turn or needs
+  input. `prefix + D` toggles Do-Not-Disturb.
+- **Per-pane log capture** — every agent pane tees its output to
+  `~/.local/state/tmux-ai/logs/<project>/<ts>.log`.
+- **Stuck detection** — agents that have been "working" for more than
+  `stuck_after_seconds` (default 180s) without output get flagged.
+
+## Install
+
+Requires: `bash`, `tmux >= 3.2`, `jq`, `flock`, `fzf`, and a desktop
+notification binary (`notify-send` on Linux, `osascript` on macOS).
+
+    git clone https://github.com/you/tmux-config ~/src/tmux-ai
+    cd ~/src/tmux-ai
+    ./install.sh --check     # dependency scan; prints install hints
+    ./install.sh             # symlinks bin, writes config.toml, appends tmux source-file
+    tmux source-file ~/.tmux.conf
+
+Uninstall: `./install.sh --uninstall`.
+
+## Usage
+
+| Keybind | Action |
+|---|---|
+| `prefix + A` | Spawn `claude` in a new pane, registered with hooks |
+| `prefix + a` | Open popup dashboard |
+| `prefix + D` | Toggle Do-Not-Disturb |
+| `prefix + L` | Open the log file of the current pane in `$PAGER` |
+
+CLI (also available as symlinked binaries):
+
+    tmux-ai spawn claude    # also bound to prefix + A
+    tmux-ai dash            # also bound to prefix + a
+    tmux-ai list            # print the registry as a table
+    tmux-ai dnd toggle      # also bound to prefix + D
+    tmux-ai status          # what the status-line renders
+    tmux-ai detect          # run one detect tick (debugging)
+    tmux-ai log <pane_id>   # open log in $PAGER
+
+## Config
+
+`~/.config/tmux-ai/config.toml` (see `config.toml.example`). All
+settings have sane defaults; the file is optional.
+
+## Troubleshooting
+
+- **No desktop notifications**: check `notify-send` runs from inside a
+  tmux pane. On some Linux DEs tmux's server is detached from the user
+  DBus. Workaround: `export DBUS_SESSION_BUS_ADDRESS` in your shell
+  rc, then restart the tmux server.
+- **Status-line shows nothing**: confirm `tmux-ai list` shows agents.
+  If empty, the hook pipeline isn't firing - check
+  `~/.local/state/tmux-ai/tmux-ai.log`.
+- **Hook errors don't bubble up**: by design. Every hook failure is
+  logged silently to the log file above.
+
+## Testing
+
+    tests/run-tests.sh
+
+See `TESTING.md` for the manual smoke checklist.
+
+## License
+
+TBD by author.
