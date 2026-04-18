@@ -1,0 +1,26 @@
+# tmux-ai config — copy to $XDG_CONFIG_HOME/tmux-ai/config.toml to override.
+
+[notifications]
+# Desktop toast via notify-send (Linux) or osascript (macOS).
+desktop = true
+# In-terminal status-line + window flash.
+status_line = true
+# Sound cues (per-event wavs in $XDG_CONFIG_HOME/tmux-ai/sounds/<event>.wav).
+sound = false
+# Push to ntfy.sh / Pushover URL.
+push = false
+# push_target = "https://ntfy.sh/your-topic"
+
+[detection]
+# How long a pane must be quiet before we call an active turn 'done'.
+idle_after_seconds = 5
+# How long 'working' without output before we flag 'stuck'.
+stuck_after_seconds = 180
+
+[status]
+# Status-line switches from inline icons to aggregated counters above this.
+inline_threshold = 3
+
+[agents.claude]
+# Override the command used to spawn claude. Useful for custom wrappers.
+spawn_command = "claude"
