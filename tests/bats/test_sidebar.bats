@@ -167,3 +167,18 @@ STUB
   run grep -cF 'switch-client -t %7' "$TMUX_STUB_CALLS"
   assert_output "1"
 }
+
+@test "sidebar --render uses plain-Unicode state glyphs matching the status bar" {
+  state_init
+  state_register "%1" agent=claude project=foo state=working
+  state_register "%2" agent=claude project=bar state=done
+  state_register "%3" agent=claude project=baz state=waiting
+  state_register "%4" agent=claude project=qux state=stuck
+  run "$PROJECT_ROOT/bin/tmux-ai-sidebar" --render
+  # Each glyph must appear. This protects against regression to the old
+  # ⚙ ⏸ ✓ ✗ glyphs that don't match the spec or the status bar.
+  assert_output --partial "◑"  # working
+  assert_output --partial "●"  # done
+  assert_output --partial "◐"  # waiting
+  assert_output --partial "▲"  # stuck
+}
