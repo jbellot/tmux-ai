@@ -14,18 +14,19 @@ source "$TMUX_AI_LIB/state.sh"
 # shellcheck source=/dev/null
 source "$TMUX_AI_LIB/config.sh"
 
-# ANSI colors — 8-color + bold for max terminal compatibility.
-ANSI_RESET=$'\033[0m'
-ANSI_DIM=$'\033[2m'
-ANSI_BOLD=$'\033[1m'
-C_WORK=$'\033[33m'
-C_WAIT=$'\033[35m'
-C_DONE=$'\033[32m'
-C_STUCK=$'\033[31m'
-C_ERROR=$'\033[1;31m'
-C_IDLE=$'\033[2m'
-C_ACCENT=$'\033[1;34m'
-C_MUTED=$'\033[2;37m'
+# Truecolor palette — driven by @tmux-ai-* options via load_palette.
+load_palette
+ANSI_RESET="$C_RESET"
+ANSI_DIM="$C_DIM_ATTR"
+ANSI_BOLD="$C_BOLD"
+C_WORK="$C_WAIT"
+C_WAIT_STATE="$C_ACCENT"
+C_DONE="$C_OK"
+# C_STUCK already set by load_palette
+C_ERROR="${C_STUCK}${C_BOLD}"
+C_IDLE="$C_DIM_ATTR"
+# C_ACCENT already set by load_palette
+C_MUTED="$C_DIM"
 
 ICON_WORK="⚙"
 ICON_WAIT="⏸"
@@ -46,7 +47,7 @@ sidebar_width() {
 color_for() {
   case "$1" in
     working) printf '%s' "$C_WORK" ;;
-    waiting) printf '%s' "$C_WAIT" ;;
+    waiting) printf '%s' "$C_WAIT_STATE" ;;
     done)    printf '%s' "$C_DONE" ;;
     stuck)   printf '%s' "$C_STUCK" ;;
     error)   printf '%s' "$C_ERROR" ;;

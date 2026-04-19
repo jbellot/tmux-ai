@@ -7,6 +7,17 @@ setup() {
   PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   export XDG_RUNTIME_DIR="$BATS_TEST_TMPDIR/run"
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state"
+
+  # Install a no-op tmux stub on PATH so load_palette falls back to
+  # hardcoded Kanagawa defaults instead of reading the user's live tmux.
+  mkdir -p "$BATS_TEST_TMPDIR/path"
+  cat >"$BATS_TEST_TMPDIR/path/tmux" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+  chmod +x "$BATS_TEST_TMPDIR/path/tmux"
+  export PATH="$BATS_TEST_TMPDIR/path:$PATH"
+
   source "$PROJECT_ROOT/lib/common.sh"
   source "$PROJECT_ROOT/lib/state.sh"
 }
@@ -27,28 +38,36 @@ setup() {
   assert_output --partial "bar"
 }
 
-@test "sidebar --render emits ANSI color for working state" {
+@test "sidebar --render emits truecolor wait color for working state" {
   state_init
   state_register "%1" agent=claude project=foo state=working
   run "$PROJECT_ROOT/bin/tmux-ai-sidebar" --render
-  # 33 = yellow in the 8-color palette
-  assert_output --partial $'\033[33m'
+  # @tmux-ai-wait default #dca561 → 220;165;97
+  assert_output --partial $'\033[38;2;220;165;97m'
 }
 
-@test "sidebar --render emits ANSI color for done state" {
+@test "sidebar --render emits truecolor ok color for done state" {
   state_init
   state_register "%1" agent=claude project=foo state=done
   run "$PROJECT_ROOT/bin/tmux-ai-sidebar" --render
-  # 32 = green
-  assert_output --partial $'\033[32m'
+  # @tmux-ai-ok default #98bb6c → 152;187;108
+  assert_output --partial $'\033[38;2;152;187;108m'
 }
 
-@test "sidebar --render emits ANSI color for stuck state" {
+@test "sidebar --render emits truecolor stuck color for stuck state" {
   state_init
   state_register "%1" agent=claude project=foo state=stuck
   run "$PROJECT_ROOT/bin/tmux-ai-sidebar" --render
-  # 31 = red
-  assert_output --partial $'\033[31m'
+  # @tmux-ai-stuck default #e82424 → 232;36;36
+  assert_output --partial $'\033[38;2;232;36;36m'
+}
+
+@test "sidebar --render uses accent color for waiting state" {
+  state_init
+  state_register "%1" agent=claude project=foo state=waiting
+  run "$PROJECT_ROOT/bin/tmux-ai-sidebar" --render
+  # @tmux-ai-accent default #7e9cd8 → 126;156;216
+  assert_output --partial $'\033[38;2;126;156;216m'
 }
 
 @test "sidebar --render shows cursor on selected row" {
