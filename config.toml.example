@@ -40,11 +40,11 @@ spawn_command = "claude"
 #                          Default: '#727169'
 # @tmux-ai-sep             Hard separators and inactive pane borders.
 #                          Default: '#363646'
-# @tmux-ai-ok              Agent state "ready/done" (●).
+# @tmux-ai-ok              Agent state "ready/done" (✓).
 #                          Default: '#98bb6c'
-# @tmux-ai-wait            Agent state "working" (◑) and DND glyph (◌).
+# @tmux-ai-wait            Agent state "working" (⚙) and DND glyph (◌).
 #                          Default: '#dca561'
-# @tmux-ai-stuck           Agent state "stuck" (▲) and "error".
+# @tmux-ai-stuck           Agent state "stuck" (✗) and "error".
 #                          Default: '#e82424'
 #
 # @tmux-ai-sidebar-width   Agents-session sidebar width in columns.

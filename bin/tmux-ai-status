@@ -11,10 +11,12 @@ source "$TMUX_AI_LIB/state.sh"
 source "$TMUX_AI_LIB/config.sh"
 
 # Glyphs (plain Unicode — no Nerd Font assumed).
-GLYPH_DONE='●'
-GLYPH_WAIT='◐'   # waiting for user input
-GLYPH_WORK='◑'   # working (turn in flight)
-GLYPH_STUCK='▲'
+# Space between glyph and count below avoids Unicode-wide glyph overlapping
+# the digit on terminals that cell-align ambiguous-width characters.
+GLYPH_DONE='✓'
+GLYPH_WAIT='⏸'   # waiting for user input
+GLYPH_WORK='⚙'   # working (turn in flight)
+GLYPH_STUCK='✗'
 
 render() {
   state_init
@@ -44,10 +46,10 @@ render() {
   col_stuck=$(_tmux_opt   @tmux-ai-stuck  '#e82424')
 
   local out=""
-  [ "$d"  -gt 0 ] && out+="#[fg=${col_done}]${GLYPH_DONE}${d} "
-  [ "$wa" -gt 0 ] && out+="#[fg=${col_waiting}]${GLYPH_WAIT}${wa} "
-  [ "$w"  -gt 0 ] && out+="#[fg=${col_working}]${GLYPH_WORK}${w} "
-  [ "$s"  -gt 0 ] && out+="#[fg=${col_stuck}]${GLYPH_STUCK}${s} "
+  [ "$d"  -gt 0 ] && out+="#[fg=${col_done}]${GLYPH_DONE} ${d} "
+  [ "$wa" -gt 0 ] && out+="#[fg=${col_waiting}]${GLYPH_WAIT} ${wa} "
+  [ "$w"  -gt 0 ] && out+="#[fg=${col_working}]${GLYPH_WORK} ${w} "
+  [ "$s"  -gt 0 ] && out+="#[fg=${col_stuck}]${GLYPH_STUCK} ${s} "
 
   printf '%s' "${out% }"
 }

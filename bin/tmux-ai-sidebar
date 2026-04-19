@@ -28,11 +28,11 @@ C_IDLE="$C_DIM_ATTR"
 # C_ACCENT already set by load_palette
 C_MUTED="$C_DIM"
 
-ICON_WORK="◑"   # working — matches status-bar GLYPH_WORK
-ICON_WAIT="◐"   # waiting for user input — matches status-bar GLYPH_WAIT
-ICON_DONE="●"   # done / ready — matches status-bar GLYPH_DONE
-ICON_STUCK="▲"  # stuck — matches status-bar GLYPH_STUCK
-ICON_ERROR="▲"  # error — same glyph as stuck; color_for already adds bold
+ICON_WORK="⚙"   # working — matches status-bar GLYPH_WORK
+ICON_WAIT="⏸"   # waiting for user input — matches status-bar GLYPH_WAIT
+ICON_DONE="✓"   # done / ready — matches status-bar GLYPH_DONE
+ICON_STUCK="✗"  # stuck — matches status-bar GLYPH_STUCK
+ICON_ERROR="!"  # error — distinct glyph; color_for still adds bold on red
 ICON_IDLE="·"   # idle — unchanged
 CURSOR="▸"
 CURSOR_EMPTY=" "

@@ -175,10 +175,11 @@ STUB
   state_register "%3" agent=claude project=baz state=waiting
   state_register "%4" agent=claude project=qux state=stuck
   run "$PROJECT_ROOT/bin/tmux-ai-sidebar" --render
-  # Each glyph must appear. This protects against regression to the old
-  # ⚙ ⏸ ✓ ✗ glyphs that don't match the spec or the status bar.
-  assert_output --partial "◑"  # working
-  assert_output --partial "●"  # done
-  assert_output --partial "◐"  # waiting
-  assert_output --partial "▲"  # stuck
+  # Glyphs must match bin/tmux-ai-status (⚙ working, ⏸ waiting, ✓ done,
+  # ✗ stuck). The circle glyphs ● ◑ ◐ were tried but overlapped with
+  # adjacent counts in some terminals.
+  assert_output --partial "⚙"  # working
+  assert_output --partial "✓"  # done
+  assert_output --partial "⏸"  # waiting
+  assert_output --partial "✗"  # stuck
 }

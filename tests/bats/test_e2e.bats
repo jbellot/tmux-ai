@@ -51,8 +51,9 @@ S
     "$PROJECT_ROOT/tests/stubs/fake-claude" <<< "prompt_submit"
 
   run "$PROJECT_ROOT/bin/tmux-ai-status"
-  # New format: palette #[fg=] span + glyph + count; project name not emitted.
-  assert_output --partial "◑1"
+  # New format: palette #[fg=] span + glyph + space + count; project name
+  # not emitted. Glyph ⚙ = working.
+  assert_output --partial "⚙ 1"
 }
 
 @test "dash renders the live agent" {

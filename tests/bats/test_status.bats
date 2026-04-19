@@ -29,8 +29,8 @@ setup() {
   state_register "%1" agent=claude project=foo state=working
   state_register "%2" agent=claude project=bar state=done
   run "$PROJECT_ROOT/bin/tmux-ai-status"
-  assert_output --partial "#[fg=#98bb6c]●1"
-  assert_output --partial "#[fg=#dca561]◑1"
+  assert_output --partial "#[fg=#98bb6c]✓ 1"
+  assert_output --partial "#[fg=#dca561]⚙ 1"
 }
 
 @test "status aggregates counts for many agents" {
@@ -41,7 +41,7 @@ setup() {
   state_register "%4" agent=claude project=d state=done
   state_register "%5" agent=claude project=e state=done
   run "$PROJECT_ROOT/bin/tmux-ai-status"
-  assert_output --partial "●2"
-  assert_output --partial "◐1"
-  assert_output --partial "◑2"
+  assert_output --partial "✓ 2"
+  assert_output --partial "⏸ 1"
+  assert_output --partial "⚙ 2"
 }

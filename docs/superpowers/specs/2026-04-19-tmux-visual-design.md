@@ -21,7 +21,7 @@ long working sessions and is trivially retheme-able.
 - **Aesthetic direction:** Quiet Minimal — single-row, transparent-background
   status bar with plain-Unicode separators.
 - **Palette:** Kanagawa Wave.
-- **Glyphs:** plain Unicode only (`◉ ◎ ● ◐ ◑ ▲ ◌ · │`) — no Nerd Font
+- **Glyphs:** plain Unicode only (`◉ ◎ ✓ ⏸ ⚙ ✗ ◌ · │`) — no Nerd Font
   assumed, no emoji.
 - **Layout:** single row, left-aligned tabs (`status-justify left`).
 
@@ -42,9 +42,9 @@ overridable by the user *before* sourcing `tmux.conf`.
 | `@tmux-ai-fg`     | `#dcd7ba` | default foreground, inactive window name, clock |
 | `@tmux-ai-dim`    | `#727169` | idle/muted state, footer hints in dash/sidebar |
 | `@tmux-ai-sep`    | `#363646` | hard separators (`│`), inactive pane borders |
-| `@tmux-ai-ok`     | `#98bb6c` | agent state "ready" / "done" (●) |
-| `@tmux-ai-wait`   | `#dca561` | agent state "working" (◑) and DND indicator (◌) |
-| `@tmux-ai-stuck`  | `#e82424` | agent state "stuck" (▲) and "error" (bold) |
+| `@tmux-ai-ok`     | `#98bb6c` | agent state "ready" / "done" (✓) |
+| `@tmux-ai-wait`   | `#dca561` | agent state "working" (⚙) and DND indicator (◌) |
+| `@tmux-ai-stuck`  | `#e82424` | agent state "stuck" (✗) and "error" (bold) |
 
 A "waiting for user input" agent state uses `@tmux-ai-accent` (blue),
 because that is conceptually "pay attention to this row" — a semantic
@@ -60,7 +60,7 @@ Single row, justified left. Contents, in order from left edge to right
 edge:
 
 ```
-[◌ ] ◉ <session> │ <tab1> · <tab2> · <tab3>        ●N ◐N ◑N ▲N │ HH:MM
+[◌ ] ◉ <session> │ <tab1> · <tab2> · <tab3>   ✓ N ⏸ N ⚙ N ✗ N │ HH:MM
 ```
 
 - **DND prefix** (`◌ ` in `@tmux-ai-wait` amber) only when
@@ -129,11 +129,11 @@ Each state renderer maps to one of these variables:
 
 | State (key) | Symbol | Variable |
 |---|---|---|
-| done / ready | `●` | `C_OK` |
-| working | `◑` | `C_WAIT` |
-| waiting (user input) | `◐` | `C_ACCENT` |
-| stuck | `▲` | `C_STUCK` |
-| error | `▲` | `C_STUCK` + `C_BOLD` |
+| done / ready | `✓` | `C_OK` |
+| working | `⚙` | `C_WAIT` |
+| waiting (user input) | `⏸` | `C_ACCENT` |
+| stuck | `✗` | `C_STUCK` |
+| error | `!` | `C_STUCK` + `C_BOLD` |
 | idle | `·` | `C_DIM` |
 
 The `waiting` ⇢ magenta mapping is explicitly replaced with
@@ -167,18 +167,20 @@ non-zero semantic state, in this order: done, waiting-for-input,
 working, stuck.
 
 ```
- #[fg=#98bb6c]●2 #[fg=#7e9cd8]◐1 #[fg=#dca561]◑1 #[fg=#e82424]▲1
+ #[fg=#98bb6c]✓ 2 #[fg=#7e9cd8]⏸ 1 #[fg=#dca561]⚙ 1 #[fg=#e82424]✗ 1
 ```
 
 | Symbol | State | Color |
 |---|---|---|
-| `●` | done / ready | `@tmux-ai-ok` |
-| `◐` | waiting for user input | `@tmux-ai-accent` |
-| `◑` | working | `@tmux-ai-wait` |
-| `▲` | stuck | `@tmux-ai-stuck` |
+| `✓` | done / ready | `@tmux-ai-ok` |
+| `⏸` | waiting for user input | `@tmux-ai-accent` |
+| `⚙` | working | `@tmux-ai-wait` |
+| `✗` | stuck | `@tmux-ai-stuck` |
 
 Empty output when no agents. Counts are suppressed when zero
-(`●0` never renders). Idle agents don't contribute a segment.
+(`✓ 0` never renders). Idle agents don't contribute a segment.
+A single space between glyph and count prevents wide-character overlap
+on terminals that render geometric glyphs in two cells.
 
 ## Documentation
 
