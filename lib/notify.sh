@@ -27,8 +27,14 @@ notify_desktop() {
   [ "$(config_get notifications desktop true)" = "true" ] || return 0
   if command -v notify-send >/dev/null 2>&1; then
     notify-send -a tmux-ai "$title" "$body" 2>/dev/null || true
+  elif command -v terminal-notifier >/dev/null 2>&1; then
+    terminal-notifier -title "$title" -message "$body" 2>/dev/null || true
   elif command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"$body\" with title \"$title\"" 2>/dev/null || true
+    # Escape double quotes in title/body to avoid AppleScript injection
+    local safe_title safe_body
+    safe_title="${title//\"/\\\"}"
+    safe_body="${body//\"/\\\"}"
+    osascript -e "display notification \"$safe_body\" with title \"$safe_title\"" 2>/dev/null || true
   else
     tmux_ai_log "notify: no desktop backend available"
   fi
