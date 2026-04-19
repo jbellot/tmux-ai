@@ -76,10 +76,10 @@ interactive_loop() {
   done
 }
 
-if [ -n "${TMUX:-}" ]; then
-  tmux display-popup -E "$0 --loop"
-elif [ "${1:-}" = "--loop" ]; then
+if [ "${1:-}" = "--loop" ]; then
   interactive_loop
+elif [ -n "${TMUX:-}" ]; then
+  tmux display-popup -w 90% -h 60% -E "$_SELF --loop"
 else
   render
 fi
