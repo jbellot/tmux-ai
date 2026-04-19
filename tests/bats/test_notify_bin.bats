@@ -56,6 +56,32 @@ S
   assert_output "waiting"
 }
 
+# Claude's Notification hook fires not only for mid-turn permission
+# prompts but also when the post-turn idle input area renders. That
+# second firing arrives AFTER Stop has already set state=done. A naive
+# handler overwrites done → waiting and the dashboard wedges.
+@test "notification after stop does NOT overwrite done state" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=done project=foo
+
+  "$PROJECT_ROOT/bin/tmux-ai-notify" notification "%5"
+  run state_get "%5" state
+  assert_output "done"
+}
+
+@test "notification while idle stays idle (session-start notifications)" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=idle project=foo
+
+  "$PROJECT_ROOT/bin/tmux-ai-notify" notification "%5"
+  run state_get "%5" state
+  assert_output "idle"
+}
+
 @test "pane_exited unregisters the pane" {
   source "$PROJECT_ROOT/lib/common.sh"
   source "$PROJECT_ROOT/lib/state.sh"

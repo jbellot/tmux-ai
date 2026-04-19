@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -u
-_SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
+_SELF="$({ readlink -f "${BASH_SOURCE[0]}" 2>/dev/null; } || { realpath "${BASH_SOURCE[0]}" 2>/dev/null; } || echo "${BASH_SOURCE[0]}")"
 _BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
 TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$_BIN_DIR/../lib" && pwd)}"
 # shellcheck source=/dev/null
@@ -96,6 +96,16 @@ render() {
   printf '\n%s[j/k] select  [Enter] jump  [q] quit%s\n' "$_DASH_MUTED" "$_DASH_RESET"
 }
 
+# Jump straight to the agent's pane. Targeting the pane id resolves to
+# session+window+pane in one shot, so we land exactly where the agent is
+# running instead of on the session's last-active pane.
+dash_jump() {
+  local pane="$1"
+  [ -n "$pane" ] || return 0
+  tmux switch-client -t "$pane" 2>/dev/null || true
+  tmux select-pane  -t "$pane" 2>/dev/null || true
+}
+
 # --render: just emit one frame and exit (used by tests)
 if [ "${1:-}" = "--render" ]; then
   render
@@ -143,11 +153,7 @@ interactive_loop() {
           [ -n "$nth" ] && selected="$nth"
           ;;
         '')
-          if [ -n "$selected" ]; then
-            local session; session="$(state_get "$selected" session)"
-            [ -n "$session" ] && tmux switch-client -t "$session" 2>/dev/null
-            tmux select-pane -t "$selected" 2>/dev/null
-          fi
+          dash_jump "$selected"
           exit 0
           ;;
       esac
@@ -155,10 +161,13 @@ interactive_loop() {
   done
 }
 
-if [ "${1:-}" = "--loop" ]; then
-  interactive_loop
-elif [ -n "${TMUX:-}" ]; then
-  tmux display-popup -w 90% -h 60% -E "$_SELF --loop"
-else
-  render
+# Only run entrypoint when executed, not when sourced (for tests).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  if [ "${1:-}" = "--loop" ]; then
+    interactive_loop
+  elif [ -n "${TMUX:-}" ]; then
+    tmux display-popup -w 90% -h 60% -E "$_SELF --loop"
+  else
+    render
+  fi
 fi

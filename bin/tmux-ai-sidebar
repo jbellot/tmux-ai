@@ -199,16 +199,14 @@ sidebar_first_pane() {
   state_list | head -n 1
 }
 
-# Jump to the real agent pane via tmux switch-client + select-pane.
+# Jump straight to the agent's pane. Targeting the pane id resolves to
+# session+window+pane in one shot, so we land exactly where the agent is
+# running instead of on whatever the session's active pane happens to be.
 sidebar_jump() {
   local pane="$1"
   [ -n "$pane" ] || return 0
-  local session
-  session="$(state_get "$pane" session)"
-  if [ -n "$session" ]; then
-    tmux switch-client -t "$session" 2>/dev/null || true
-  fi
-  tmux select-pane -t "$pane" 2>/dev/null || true
+  tmux switch-client -t "$pane" 2>/dev/null || true
+  tmux select-pane  -t "$pane" 2>/dev/null || true
 }
 
 # ========== Interactive loop ==========

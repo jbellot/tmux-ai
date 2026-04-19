@@ -90,7 +90,9 @@ state_list() {
   local f
   f="$(_state_file)"
   _state_validate
-  jq -r 'keys[]' "$f"
+  # keys_unsorted preserves JSON insertion order so the navigation order
+  # in dash/sidebar lines up with the rendered rows (which use to_entries).
+  jq -r 'keys_unsorted[]' "$f"
 }
 
 state_dump() {

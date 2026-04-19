@@ -57,7 +57,7 @@ main() {
     cwd="$pdir" \
     adapter="$adapter_name" \
     state=idle \
-    last_byte_count=0 \
+    last_content_hash="" \
     last_byte_ts="$(date +%s)"
 
   # Install hooks (writes the per-pane settings file).

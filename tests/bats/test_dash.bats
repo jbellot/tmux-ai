@@ -83,3 +83,24 @@ setup() {
   TMUX_AI_DASH_SELECTED="%2" run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
   [[ "$output" == *"▸"*"bar"* ]] || [[ "$output" == *"bar"*"▸"* ]]
 }
+
+# Pressing Enter on a row must leave the client on that exact pane.
+# Targeting the session alone lands on whatever window/pane that
+# session had last, not the registered agent's pane.
+@test "dash_jump switches client using the pane id" {
+  mkdir -p "$BATS_TEST_TMPDIR/path"
+  export TMUX_STUB_CALLS="$BATS_TEST_TMPDIR/tmux_calls"
+  export TMUX_STUB_RESPONSES="$BATS_TEST_TMPDIR/tmux_responses"
+  cp "$PROJECT_ROOT/tests/stubs/tmux" "$BATS_TEST_TMPDIR/path/tmux"
+  export PATH="$BATS_TEST_TMPDIR/path:$PATH"
+  : > "$TMUX_STUB_CALLS"
+  : > "$TMUX_STUB_RESPONSES"
+
+  state_init
+  state_register "%7" agent=claude project=foo session=other-session
+  # shellcheck source=/dev/null
+  source "$PROJECT_ROOT/bin/tmux-ai-dash"
+  dash_jump "%7"
+  run grep -cF 'switch-client -t %7' "$TMUX_STUB_CALLS"
+  assert_output "1"
+}

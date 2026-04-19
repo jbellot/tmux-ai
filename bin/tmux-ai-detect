@@ -37,7 +37,7 @@ auto_detect() {
       session="$sess" \
       state=idle \
       adapter=generic \
-      last_byte_count=0 \
+      last_content_hash="" \
       last_byte_ts="$(date +%s)"
     tmux_ai_log "detect: auto-registered $pane ($cmd in $project)"
   done < <(tmux list-panes -a -F "#{pane_id} #{pane_current_command} #{pane_current_path} #{window_name} #{window_index}.#{pane_index} #{session_name}" 2>/dev/null)

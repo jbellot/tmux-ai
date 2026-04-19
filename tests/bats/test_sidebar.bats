@@ -108,3 +108,43 @@ setup() {
   run sidebar_nth_pane 99
   assert_output ""
 }
+
+# Nth/first pane must line up with the displayed rows, even when pane
+# ids aren't in lexicographic order (e.g. %9 registered before %1).
+@test "sidebar_nth_pane follows insertion order, not lexicographic" {
+  state_init
+  state_register "%9" agent=claude project=first state=idle
+  state_register "%1" agent=claude project=second state=idle
+  state_register "%5" agent=claude project=third state=idle
+  source "$PROJECT_ROOT/bin/tmux-ai-sidebar"
+  run sidebar_nth_pane 1
+  assert_output "%9"
+  run sidebar_first_pane
+  assert_output "%9"
+}
+
+# sidebar_jump must target the pane id directly so tmux resolves
+# session+window+pane in one shot. Using a session name alone leaves
+# the client on the session's previously-active window/pane — the user
+# wanted the agent, not "somewhere in its session".
+@test "sidebar_jump switches client using the pane id" {
+  mkdir -p "$BATS_TEST_TMPDIR/path"
+  export TMUX_STUB_CALLS="$BATS_TEST_TMPDIR/tmux_calls"
+  export TMUX_STUB_RESPONSES="$BATS_TEST_TMPDIR/tmux_responses"
+  cp "$PROJECT_ROOT/tests/stubs/tmux" "$BATS_TEST_TMPDIR/path/tmux"
+  export PATH="$BATS_TEST_TMPDIR/path:$PATH"
+  : > "$TMUX_STUB_CALLS"
+  : > "$TMUX_STUB_RESPONSES"
+
+  export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
+  mkdir -p "$XDG_CONFIG_HOME/tmux-ai"
+  # shellcheck source=/dev/null
+  source "$PROJECT_ROOT/lib/config.sh"
+
+  state_init
+  state_register "%7" agent=claude project=foo session=other-session
+  source "$PROJECT_ROOT/bin/tmux-ai-sidebar"
+  sidebar_jump "%7"
+  run grep -cF 'switch-client -t %7' "$TMUX_STUB_CALLS"
+  assert_output "1"
+}

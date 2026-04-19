@@ -60,6 +60,21 @@ setup() {
   assert_line "%7"
 }
 
+# state_list drives cursor navigation and numeric-jump in the dashboard
+# and sidebar. Those views render rows in object-insertion order
+# (`to_entries`), so state_list must match — otherwise initial cursor
+# lands mid-list and numeric keys select the wrong row.
+@test "state_list preserves insertion order (matches render order)" {
+  state_init
+  state_register "%9" agent=claude
+  state_register "%1" agent=claude
+  state_register "%5" agent=claude
+  run state_list
+  [ "${lines[0]}" = "%9" ]
+  [ "${lines[1]}" = "%1" ]
+  [ "${lines[2]}" = "%5" ]
+}
+
 @test "corrupt state file is moved aside and rebuilt" {
   state_init
   echo "not json at all" > "$(tmux_ai_runtime_dir)/agents.json"

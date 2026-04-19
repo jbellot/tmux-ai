@@ -24,22 +24,25 @@ setup() {
   export TMUX_AI_NOTIFY_BIN="$PROJECT_ROOT/bin/tmux-ai-notify"
 }
 
-@test "generic_tick transitions idle->working when bytes grow" {
+@test "generic_tick transitions idle->working when pane content changes" {
   state_init
-  state_register "%5" agent=claude state=idle last_byte_count=100 last_byte_ts=1000
+  state_register "%5" agent=claude state=idle last_content_hash="" last_byte_ts=1000
   echo "capture-pane::$(printf 'x%.0s' $(seq 1 500))" > "$TMUX_STUB_RESPONSES"
   generic_tick "%5"
   run state_get "%5" state
   assert_output "working"
 }
 
-@test "generic_tick transitions working->done when bytes quiescent past idle_after_seconds" {
+@test "generic_tick transitions working->done when pane quiescent past idle_after_seconds" {
   state_init
-  local now past
+  local now past content seed_hash
   now=$(date +%s)
   past=$((now - 10))
-  state_register "%5" agent=claude state=working last_byte_count=500 last_byte_ts="$past"
-  echo "capture-pane::$(printf 'x%.0s' $(seq 1 500))" > "$TMUX_STUB_RESPONSES"
+  content="$(printf 'x%.0s' $(seq 1 500))"
+  seed_hash=$(printf '%s' "$content" | cksum | awk '{print $1}')
+  state_register "%5" agent=claude state=working \
+    last_content_hash="$seed_hash" last_byte_ts="$past"
+  echo "capture-pane::$content" > "$TMUX_STUB_RESPONSES"
   generic_tick "%5"
   run state_get "%5" state
   assert_output "done"
@@ -52,12 +55,53 @@ stuck_after_seconds = 5
 idle_after_seconds = 999
 EOF
   state_init
-  local now past
+  local now past content seed_hash
   now=$(date +%s)
   past=$((now - 10))
-  state_register "%5" agent=claude state=working last_byte_count=500 last_byte_ts="$past"
-  echo "capture-pane::$(printf 'x%.0s' $(seq 1 500))" > "$TMUX_STUB_RESPONSES"
+  content="$(printf 'x%.0s' $(seq 1 500))"
+  seed_hash=$(printf '%s' "$content" | cksum | awk '{print $1}')
+  state_register "%5" agent=claude state=working \
+    last_content_hash="$seed_hash" last_byte_ts="$past"
+  echo "capture-pane::$content" > "$TMUX_STUB_RESPONSES"
   generic_tick "%5"
   run state_get "%5" state
   assert_output "stuck"
+}
+
+# A TUI spinner repaints in place: new frame has the same visible length but
+# different glyphs. This must count as activity, otherwise a live agent drifts
+# to "done" after idle_after_seconds.
+@test "generic_tick treats same-length content change as activity (spinner case)" {
+  state_init
+  local now past frame_a frame_b
+  now=$(date +%s)
+  past=$((now - 10))
+  frame_a="$(printf 'a%.0s' $(seq 1 500))"
+  frame_b="$(printf 'b%.0s' $(seq 1 500))"
+  # Seed with the hash of frame_a, then serve frame_b.
+  local seed_hash
+  seed_hash=$(printf '%s' "$frame_a" | cksum | awk '{print $1}')
+  state_register "%5" agent=claude state=working \
+    last_content_hash="$seed_hash" last_byte_ts="$past"
+  echo "capture-pane::$frame_b" > "$TMUX_STUB_RESPONSES"
+  generic_tick "%5"
+  run state_get "%5" state
+  assert_output "working"
+}
+
+# When the TUI re-renders with fewer lines, the visible content shrinks.
+# Under a length-based heuristic the state wedges, because cur < prev can
+# never fire activity again. Hash comparison must recover.
+@test "generic_tick treats shrinking content change as activity" {
+  state_init
+  local long short seed_hash
+  long="$(printf 'x%.0s' $(seq 1 5000))"
+  short="$(printf 'y%.0s' $(seq 1 500))"
+  seed_hash=$(printf '%s' "$long" | cksum | awk '{print $1}')
+  state_register "%5" agent=claude state=idle \
+    last_content_hash="$seed_hash" last_byte_ts=1000
+  echo "capture-pane::$short" > "$TMUX_STUB_RESPONSES"
+  generic_tick "%5"
+  run state_get "%5" state
+  assert_output "working"
 }

@@ -45,11 +45,20 @@ main() {
       notify_push "${agent:-agent} — done" "${project:-(unknown project)}"
       ;;
     notification)
-      state_set "$pane" state waiting
+      # Claude fires Notification for BOTH mid-turn permission prompts
+      # (legitimately "waiting for input") and post-turn idle UI like the
+      # feedback prompt — which arrives after Stop and would otherwise
+      # wedge the dashboard on "waiting" forever. Only transition when
+      # the turn is actually in progress.
+      local cur_state
+      cur_state="$(state_get "$pane" state)"
       state_set "$pane" last_byte_ts "$now"
-      notify_desktop "${agent:-agent} — needs input" "${project:-(unknown project)}"
-      notify_sound waiting
-      notify_push "${agent:-agent} — needs input" "${project:-(unknown project)}"
+      if [ "$cur_state" = "working" ] || [ "$cur_state" = "waiting" ]; then
+        state_set "$pane" state waiting
+        notify_desktop "${agent:-agent} — needs input" "${project:-(unknown project)}"
+        notify_sound waiting
+        notify_push "${agent:-agent} — needs input" "${project:-(unknown project)}"
+      fi
       ;;
     stuck)
       state_set "$pane" state stuck
