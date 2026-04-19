@@ -39,6 +39,12 @@ CURSOR_EMPTY=" "
 
 sidebar_width() {
   local w
+  # Reuse the interactive-loop cache to avoid forking tmux show-options
+  # on every keystroke.
+  if [ -n "${TMUX_AI_SIDEBAR_WIDTH_CACHE:-}" ]; then
+    printf '%s\n' "$TMUX_AI_SIDEBAR_WIDTH_CACHE"
+    return 0
+  fi
   w="$(tmux show-options -gv @tmux-ai-sidebar-width 2>/dev/null || true)"
   [ -n "$w" ] || w=32
   printf '%s\n' "$w"
@@ -106,11 +112,25 @@ render_empty() {
 }
 
 render() {
-  state_init
+  # state_init only when called outside the interactive loop (validate
+  # once up front inside the loop via TMUX_AI_SIDEBAR_SKIP_INIT).
+  [ -z "${TMUX_AI_SIDEBAR_SKIP_INIT:-}" ] && state_init
   local file; file="$(_state_file)"
-  local count; count=$(jq 'length' "$file" 2>/dev/null || echo 0)
   local selected="${TMUX_AI_SIDEBAR_SELECTED:-}"
   local w; w=$(sidebar_width)
+
+  # One jq pass emits TSV for every row. Row count = array length, so
+  # we drop the separate `jq 'length'` call.
+  local rows=() line
+  while IFS= read -r line; do rows+=("$line"); done < <(jq -r '
+    to_entries[] |
+    [.key,
+     (.value.state // "idle"),
+     (.value.project // .key),
+     (.value.turn_started_ts // 0 | tostring)
+    ] | @tsv
+  ' "$file" 2>/dev/null)
+  local count=${#rows[@]}
 
   if [ "$count" -eq 0 ]; then
     render_empty
@@ -121,31 +141,52 @@ render() {
   printf '%s%s agents%s\n' "$C_ACCENT" "$count" "$ANSI_RESET"
   printf '%s\n' "$(printf '%*s' "$w" '' | tr ' ' '─')"
 
-  # One row per entry
-  local entry pane state project turn icon color cursor proj_col
-  proj_col=$(( w - 10 ))
+  # One row per entry — helpers inlined to eliminate per-row $()
+  # subshell forks (previously: icon_for + color_for + trunc +
+  # fmt_elapsed × N rows; that's the main source of navigation lag).
+  local proj_col=$(( w - 10 ))
   [ "$proj_col" -lt 4 ] && proj_col=4
+  local now; now=$(date +%s 2>/dev/null || echo 0)
+  local row pane state project turn icon color cursor project_t elapsed diff hh mm ss
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r pane state project turn <<< "$row"
 
-  while IFS= read -r entry; do
-    pane=$(echo    "$entry" | jq -r '.key')
-    state=$(echo   "$entry" | jq -r '.value.state // "idle"')
-    project=$(echo "$entry" | jq -r '.value.project // .key')
-    turn=$(echo    "$entry" | jq -r '.value.turn_started_ts // 0')
-    icon="$(icon_for "$state")"
-    color="$(color_for "$state")"
-    if [ "$pane" = "$selected" ]; then
-      cursor="$CURSOR"
+    case "$state" in
+      working) icon="$ICON_WORK";  color="$C_WORK" ;;
+      waiting) icon="$ICON_WAIT";  color="$C_WAIT_STATE" ;;
+      done)    icon="$ICON_DONE";  color="$C_DONE" ;;
+      stuck)   icon="$ICON_STUCK"; color="$C_STUCK" ;;
+      error)   icon="$ICON_ERROR"; color="$C_ERROR" ;;
+      *)       icon="$ICON_IDLE";  color="$C_IDLE" ;;
+    esac
+
+    if [ "$pane" = "$selected" ]; then cursor="$CURSOR"; else cursor="$CURSOR_EMPTY"; fi
+
+    # Inline trunc + left-pad.
+    project_t="$project"
+    [ "${#project_t}" -gt "$proj_col" ] && project_t="${project_t:0:$((proj_col - 1))}…"
+    printf -v project_t '%-*s' "$proj_col" "$project_t"
+
+    # Inline fmt_elapsed (matches existing sidebar format: mm:ss up to
+    # 100 min, then hh:mm).
+    if [ "$turn" -eq 0 ] 2>/dev/null; then
+      elapsed='  -  '
     else
-      cursor="$CURSOR_EMPTY"
+      diff=$((now - turn))
+      mm=$((diff / 60))
+      ss=$((diff % 60))
+      if [ "$mm" -ge 100 ]; then
+        hh=$((mm / 60))
+        mm=$((mm % 60))
+        printf -v elapsed '%02d:%02d' "$hh" "$mm"
+      else
+        printf -v elapsed '%02d:%02d' "$mm" "$ss"
+      fi
     fi
-    local project_padded
-    project_padded=$(printf '%-*s' "$proj_col" "$(trunc "$project" "$proj_col")")
+
     printf '%s %s%s%s %s %s\n' \
-      "$cursor" \
-      "$color" "$icon" "$ANSI_RESET" \
-      "$project_padded" \
-      "$(fmt_elapsed "$turn")"
-  done < <(jq -c 'to_entries[]' "$file")
+      "$cursor" "$color" "$icon" "$ANSI_RESET" "$project_t" "$elapsed"
+  done
 
   # Footer
   printf '\n'
@@ -217,13 +258,25 @@ interactive_loop() {
   printf '\033[?25l'
   trap 'printf "\033[?25h\033[2J\033[H"; exit' EXIT INT TERM
 
-  # Force full redraw on resize.
-  trap 'last_hash=""' WINCH
-
   printf '\033[2J\033[H'
+
+  # Validate the state file once up front; render() skips its own
+  # state_init to avoid forking `jq -e .` on every keystroke.
+  state_init
+  export TMUX_AI_SIDEBAR_SKIP_INIT=1
+
+  # Cache sidebar width (only changes when the user edits
+  # @tmux-ai-sidebar-width and re-sources tmux.conf; a WINCH at that
+  # point will refresh it).
+  TMUX_AI_SIDEBAR_WIDTH_CACHE=$(tmux show-options -gv @tmux-ai-sidebar-width 2>/dev/null || true)
+  [ -n "$TMUX_AI_SIDEBAR_WIDTH_CACHE" ] || TMUX_AI_SIDEBAR_WIDTH_CACHE=32
+  export TMUX_AI_SIDEBAR_WIDTH_CACHE
 
   local selected last_hash="" frame cur_hash key
   selected="$(sidebar_first_pane)"
+
+  # Force full redraw + refresh width cache on resize.
+  trap 'TMUX_AI_SIDEBAR_WIDTH_CACHE=$(tmux show-options -gv @tmux-ai-sidebar-width 2>/dev/null || echo 32); last_hash=""' WINCH
 
   while true; do
     TMUX_AI_SIDEBAR_SELECTED="$selected" \
@@ -235,7 +288,8 @@ interactive_loop() {
       last_hash="$cur_hash"
     fi
 
-    if read -t 1 -n 1 -s key 2>/dev/null; then
+    # 0.1s poll = 10 Hz. Render cache-diffs prevent wasted repaints.
+    if read -t 0.1 -n 1 -s key 2>/dev/null; then
       case "$key" in
         j) selected="$(sidebar_next_pane "$selected")" ;;
         k) selected="$(sidebar_prev_pane "$selected")" ;;
