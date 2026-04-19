@@ -9,14 +9,19 @@ source "$TMUX_AI_LIB/common.sh"
 source "$TMUX_AI_LIB/state.sh"
 
 fmt_elapsed() {
-  local start now diff mm ss
-  start="${1:-0}"
-  [ "$start" -eq 0 ] && { printf '  -  '; return; }
-  now=$(date +%s)
+  local start="${1:-0}" now="${2:-}" diff hh mm ss
+  [ "$start" -eq 0 ] && { printf '   -    '; return; }
+  [ -z "$now" ] && now=$(date +%s)
   diff=$((now - start))
-  mm=$((diff / 60))
+  hh=$((diff / 3600))
+  mm=$(( (diff % 3600) / 60 ))
   ss=$((diff % 60))
-  printf '%02d:%02d' "$mm" "$ss"
+  if [ "$hh" -gt 0 ]; then
+    # h:mm:ss rolls over to hh:mm:ss above 10h — max 8 chars.
+    printf '%d:%02d:%02d' "$hh" "$mm" "$ss"
+  else
+    printf '   %02d:%02d' "$mm" "$ss"
+  fi
 }
 
 # Truncate to N visible chars, adding … when clipped.
@@ -29,24 +34,22 @@ _dash_trunc() {
   fi
 }
 
-# Compute responsive column widths based on the terminal / popup width.
-# Emits "content_w agent_w project_w" on stdout. Fixed columns (state 7,
-# win:pane 10, elapsed 5, cursor 1) plus separators take 35 cols; the
-# remaining "flex" space is split between agent and project, capped so
-# neither field gets silly-wide on a 200-col monitor.
+# Compute column widths. Fixed cells: state=7, agent=12, winpane=10,
+# elapsed=8, cursor=1. With 5 two-space gaps + the 2-char frame, that's
+# 51 chars before the project column. We give PROJECT whatever remains
+# (clamped 8–30) so it doesn't sprawl on wide monitors.
+#
+# Emits "content_w agent_w project_w" on stdout.
 _dash_layout() {
-  local cols content_w flex agent_w project_w
+  local cols project_w content_w
   cols=$(tput cols 2>/dev/null || echo 80)
-  content_w=$cols
-  [ "$content_w" -gt 120 ] && content_w=120
-  [ "$content_w" -lt 50 ]  && content_w=50
-  flex=$(( content_w - 35 ))
-  agent_w=$(( flex / 3 ))
-  [ "$agent_w" -lt 6 ]  && agent_w=6
-  [ "$agent_w" -gt 15 ] && agent_w=15
-  project_w=$(( flex - agent_w ))
-  [ "$project_w" -lt 10 ] && project_w=10
-  printf '%d %d %d' "$content_w" "$agent_w" "$project_w"
+  local avail=$(( cols - 2 ))     # leave a 1-char margin each side
+  [ "$avail" -lt 55 ] && avail=55
+  project_w=$(( avail - 51 ))
+  [ "$project_w" -lt 8 ]  && project_w=8
+  [ "$project_w" -gt 30 ] && project_w=30
+  content_w=$(( 51 + project_w ))
+  printf '%d %d %d' "$content_w" 12 "$project_w"
 }
 
 # Truecolor palette — driven by @tmux-ai-* options via load_palette.
@@ -67,15 +70,38 @@ _dash_color_for() {
 }
 
 render() {
-  state_init
+  # state_init only when called outside the interactive loop — inside
+  # the loop we validate once up front and skip re-validating on every
+  # keystroke (40ms jq -e fork).
+  [ -z "${TMUX_AI_DASH_SKIP_INIT:-}" ] && state_init
   local file; file="$(_state_file)"
-  local count; count=$(jq 'length' "$file" 2>/dev/null || echo 0)
 
-  # Compute responsive layout. Column widths scale with the popup so
-  # long project names have room; fixed cells stay fixed.
+  # One jq pass pulls every row as TSV. Row count comes from array length
+  # so we can drop a separate `jq 'length'` call (saves ~40ms / render).
+  local rows=() line
+  while IFS= read -r line; do rows+=("$line"); done < <(jq -r '
+    to_entries[] |
+    [.key,
+     (.value.state // "?"),
+     (.value.agent // "?"),
+     (.value.project // "?"),
+     (.value.window // "?"),
+     (.value.pane_index // "?"),
+     (.value.turn_started_ts // 0 | tostring)
+    ] | @tsv
+  ' "$file" 2>/dev/null)
+  local count=${#rows[@]}
+
+  # Reuse the interactive-loop's cached layout if present (avoids a
+  # `tput cols` fork on every keystroke); fall back to a fresh compute
+  # for --render mode or first call.
   local content_w agent_w project_w
-  read -r content_w agent_w project_w < <(_dash_layout)
-  local state_w=7 winpane_w=10 elapsed_w=5
+  if [ -n "${TMUX_AI_DASH_LAYOUT_CACHE:-}" ]; then
+    read -r content_w agent_w project_w <<< "$TMUX_AI_DASH_LAYOUT_CACHE"
+  else
+    read -r content_w agent_w project_w < <(_dash_layout)
+  fi
+  local state_w=7 winpane_w=10 elapsed_w=8
   local dash_w=$(( content_w - 2 ))   # dashes inside the frame
 
   # Header
@@ -119,18 +145,26 @@ render() {
   for i in $(seq 1 "$dash_w"); do printf '─'; done
   printf '┤%s\n' "$_DASH_RESET"
 
-  # Rows
-  local entry state agent project win pane_idx turn color pane cursor
+  # Rows — iterate the already-parsed TSV array. Truncation + elapsed
+  # formatting are inlined rather than calling helper functions via
+  # $(...) because each command substitution forks a subshell, and that
+  # fork cost (~5ms × ~4 calls × N rows) was dominating render latency.
+  local now; now=$(date +%s 2>/dev/null || echo 0)
+  local pane state agent project win pane_idx turn color cursor
   local _dash_cursor_emitted=""
-  while IFS= read -r entry; do
-    pane=$(echo     "$entry" | jq -r '.key')
-    state=$(echo    "$entry" | jq -r '.value.state // "?"')
-    agent=$(echo    "$entry" | jq -r '.value.agent // "?"')
-    project=$(echo  "$entry" | jq -r '.value.project // "?"')
-    win=$(echo      "$entry" | jq -r '.value.window // "?"')
-    pane_idx=$(echo "$entry" | jq -r '.value.pane_index // "?"')
-    turn=$(echo     "$entry" | jq -r '.value.turn_started_ts // 0')
-    color="$(_dash_color_for "$state")"
+  local row agent_t project_t winpane elapsed diff hh mm ss
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r pane state agent project win pane_idx turn <<< "$row"
+
+    case "$state" in
+      working) color="$C_WAIT" ;;
+      waiting) color="$C_ACCENT" ;;
+      done)    color="$C_OK" ;;
+      stuck)   color="$C_STUCK" ;;
+      error)   color="${C_STUCK}${C_BOLD}" ;;
+      *)       color="$C_DIM_ATTR" ;;
+    esac
+
     if [ "$pane" = "${TMUX_AI_DASH_SELECTED:-}" ]; then
       cursor="▸"
     elif [ -z "${TMUX_AI_DASH_SELECTED:-}" ] && [ -z "$_dash_cursor_emitted" ]; then
@@ -139,16 +173,35 @@ render() {
     else
       cursor=" "
     fi
-    # Truncate variable fields to fit their assigned widths.
-    local agent_t project_t winpane
-    agent_t=$(_dash_trunc "$agent" "$agent_w")
-    project_t=$(_dash_trunc "$project" "$project_w")
-    winpane=$(_dash_trunc "$win:$pane_idx" "$winpane_w")
+
+    # Inline truncate (bash builtins only).
+    agent_t="$agent"
+    [ "${#agent_t}" -gt "$agent_w" ] && agent_t="${agent_t:0:$((agent_w - 1))}…"
+    project_t="$project"
+    [ "${#project_t}" -gt "$project_w" ] && project_t="${project_t:0:$((project_w - 1))}…"
+    winpane="$win:$pane_idx"
+    [ "${#winpane}" -gt "$winpane_w" ] && winpane="${winpane:0:$((winpane_w - 1))}…"
+
+    # Inline fmt_elapsed.
+    if [ "$turn" -eq 0 ] 2>/dev/null; then
+      elapsed='   -    '
+    else
+      diff=$((now - turn))
+      hh=$((diff / 3600))
+      mm=$(( (diff % 3600) / 60 ))
+      ss=$((diff % 60))
+      if [ "$hh" -gt 0 ]; then
+        printf -v elapsed '%d:%02d:%02d' "$hh" "$mm" "$ss"
+      else
+        printf -v elapsed '   %02d:%02d' "$mm" "$ss"
+      fi
+    fi
+
     printf '│ %s %s%-*s%s  %-*s  %-*s  %-*s  %-*s │\n' \
       "$cursor" "$color" "$state_w" "$state" "$_DASH_RESET" \
       "$agent_w" "$agent_t" "$project_w" "$project_t" \
-      "$winpane_w" "$winpane" "$elapsed_w" "$(fmt_elapsed "$turn")"
-  done < <(jq -c 'to_entries[]' "$file")
+      "$winpane_w" "$winpane" "$elapsed_w" "$elapsed"
+  done
 
   # Bottom
   printf '%s└' "$_DASH_ACCENT"
@@ -184,8 +237,21 @@ interactive_loop() {
 
   printf '\033[2J\033[H'
 
+  # Validate state file once up front; render() skips its own state_init
+  # so it doesn't fork `jq -e .` on every keystroke.
+  state_init
+  export TMUX_AI_DASH_SKIP_INIT=1
+
+  # Cache the layout once — the terminal/popup only resizes on WINCH,
+  # so there's no reason to fork `tput cols` on every keystroke.
+  TMUX_AI_DASH_LAYOUT_CACHE="$(_dash_layout)"
+  export TMUX_AI_DASH_LAYOUT_CACHE
+
   local selected last_hash="" frame cur_hash key
   selected="$(state_list | head -n 1)"
+
+  # Recompute layout + force full redraw when the popup resizes.
+  trap 'TMUX_AI_DASH_LAYOUT_CACHE="$(_dash_layout)"; last_hash=""' WINCH
 
   while true; do
     TMUX_AI_DASH_SELECTED="$selected" \
