@@ -34,7 +34,6 @@ main() {
       # shellcheck source=/dev/null
       source "$TMUX_AI_ADAPTERS/claude.sh"
       local adapter_name="claude"
-      local spawn_cmd; spawn_cmd="$(claude_spawn_cmd)"
       ;;
     *)
       echo "unknown agent: $agent" >&2
@@ -42,7 +41,7 @@ main() {
       ;;
   esac
 
-  local pdir project pane settings logfile env_str
+  local pdir project pane logfile env_str spawn_cmd
   pdir="$(project_dir)"
   project="$(basename "$pdir")"
 
@@ -61,18 +60,21 @@ main() {
     last_byte_count=0 \
     last_byte_ts="$(date +%s)"
 
-  # Install hooks
-  settings="$(claude_register_hooks "$pane")"
-  env_str="$(claude_spawn_env "$pane")"
+  # Install hooks (writes the per-pane settings file).
+  claude_register_hooks "$pane" >/dev/null
+
+  # Build the env prefix + command AFTER the pane exists (needs pane id).
+  env_str="$(claude_spawn_env)"
+  spawn_cmd="$(claude_spawn_cmd "$pane")"
 
   # Start log capture
   logfile="$(log_path_for "$project")"
   state_set "$pane" logfile "$logfile"
   tmux pipe-pane -o -t "$pane" "cat >> '$logfile'" 2>/dev/null || true
 
-  # Launch the agent with env set
-  # Use send-keys so the env takes effect in the pane's shell
-  tmux send-keys -t "$pane" "$env_str clear; $spawn_cmd" C-m 2>/dev/null || true
+  # Launch: "TMUX_AI_NOTIFY_BIN=/path claude --settings /path.json"
+  # One clean line → no multi-line paste weirdness.
+  tmux send-keys -t "$pane" "$env_str $spawn_cmd" C-m 2>/dev/null || true
 
   tmux_ai_log "spawn: pane=$pane agent=$agent project=$project"
   echo "$pane"

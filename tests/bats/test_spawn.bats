@@ -47,3 +47,29 @@ EOF
   run grep -c 'pipe-pane' "$TMUX_STUB_CALLS"
   [ "$output" -ge 1 ]
 }
+
+@test "spawn passes --settings flag with the per-pane file path" {
+  cd "$BATS_TEST_TMPDIR"
+  "$PROJECT_ROOT/bin/tmux-ai-spawn" claude
+  # The send-keys call should contain "--settings" and reference %42.json
+  run grep -F -- '--settings' "$TMUX_STUB_CALLS"
+  assert_success
+  run grep -F -- '%42.json' "$TMUX_STUB_CALLS"
+  assert_success
+}
+
+@test "spawn sends a single-line command (no embedded newlines)" {
+  cd "$BATS_TEST_TMPDIR"
+  "$PROJECT_ROOT/bin/tmux-ai-spawn" claude
+  # The send-keys call for the spawn command should be on one logical line.
+  # Find the send-keys line and check it doesn't contain a literal newline
+  # inside the quoted command.
+  local send_keys_line
+  send_keys_line=$(grep 'send-keys' "$TMUX_STUB_CALLS" | grep 'claude' | head -1)
+  [ -n "$send_keys_line" ]
+  # The stub records one call per line; if send-keys had embedded newlines,
+  # it would show as multiple lines. There should be exactly ONE 'send-keys'
+  # line containing 'claude'.
+  run bash -c "grep -c 'send-keys.*claude' '$TMUX_STUB_CALLS'"
+  assert_output "1"
+}

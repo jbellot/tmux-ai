@@ -46,18 +46,21 @@ claude_uninstall_hooks() {
 # symmetry with the generic adapter.
 claude_parse_state() { return 0; }
 
-# Print the env pairs the spawn command needs.
-# Usage: eval "$(claude_spawn_env <pane>)"
+# Print an inline env prefix for the spawn command line.
+# Only TMUX_AI_NOTIFY_BIN is needed — the settings file is passed via
+# claude's --settings flag (see claude_spawn_cmd), not via an env var.
 claude_spawn_env() {
-  local pane="$1"
-  local settings
-  settings="$(_claude_settings_path "$pane")"
-  printf "export CLAUDE_SETTINGS=%q\n" "$settings"
-  printf "export TMUX_AI_NOTIFY_BIN=%q\n" "${TMUX_AI_NOTIFY_BIN:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../bin" && pwd)/tmux-ai-notify}"
+  local notify
+  notify="${TMUX_AI_NOTIFY_BIN:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../bin" && pwd)/tmux-ai-notify}"
+  printf 'TMUX_AI_NOTIFY_BIN=%q' "$notify"
 }
 
+# Build the claude command including --settings <file>.
+# Pane id is required so the right settings file gets referenced.
 claude_spawn_cmd() {
-  local cmd
+  local pane="$1"
+  local cmd settings
   cmd="$(config_get agents.claude spawn_command claude)"
-  printf '%s\n' "$cmd"
+  settings="$(_claude_settings_path "$pane")"
+  printf '%s --settings %q' "$cmd" "$settings"
 }
