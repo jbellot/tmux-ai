@@ -21,14 +21,26 @@ Phase 2.
 
 Requires: `bash`, `tmux >= 3.2`, `jq`, `flock`, `fzf`, and a desktop
 notification binary (`notify-send` on Linux, `osascript` on macOS).
+Optional: `xclip` (Linux) or `pbcopy` (macOS) for copy-mode yank to
+system clipboard.
 
-    git clone https://github.com/you/tmux-config ~/src/tmux-ai
-    cd ~/src/tmux-ai
-    ./install.sh --check     # dependency scan; prints install hints
-    ./install.sh             # symlinks bin, writes config.toml, appends tmux source-file
+Two install modes:
+
+    # Additive mode: source our tmux.conf from your own ~/.tmux.conf
+    ./install.sh --check       # dep scan
+    ./install.sh               # symlinks bin/*, appends source-file block to ~/.tmux.conf
+
+    # Full mode: symlink ~/.tmux.conf → our tmux.conf (backing up any existing one)
+    ./install.sh --full
+
+Reload tmux to pick up changes:
+
     tmux source-file ~/.tmux.conf
 
-Uninstall: `./install.sh --uninstall`.
+Uninstall (restores most-recent backup in full mode):
+
+    ./install.sh --uninstall
+    ./install.sh --uninstall --no-restore   # keep symlink removed, don't restore
 
 ## Usage
 
@@ -48,6 +60,25 @@ CLI (also available as symlinked binaries):
     tmux-ai status          # what the status-line renders
     tmux-ai detect          # run one detect tick (debugging)
     tmux-ai log <pane_id>   # open log in $PAGER
+
+## Agents session
+
+`prefix + g` switches to the `agents` session (auto-created on first
+tmux attach). The session has a narrow sidebar on the left showing
+every registered agent, and an open shell on the right for you to use
+however you like.
+
+Inside the sidebar pane:
+
+- `j` / `k` — move cursor up/down
+- `1..9` — jump by row number
+- `Enter` — switch to the selected agent's real pane
+- `d` + `y` — unregister the selected agent
+- `r` — force refresh
+
+Agents themselves still live in whatever session/window you spawn them
+from (`prefix + A` stays in the current window). The sidebar is a live
+monitor + teleport hub, not a workspace.
 
 ## Config
 
