@@ -19,6 +19,36 @@ fmt_elapsed() {
   printf '%02d:%02d' "$mm" "$ss"
 }
 
+# Truncate to N visible chars, adding … when clipped.
+_dash_trunc() {
+  local s="$1" n="$2"
+  if [ "${#s}" -le "$n" ]; then
+    printf '%s' "$s"
+  else
+    printf '%s…' "${s:0:$((n - 1))}"
+  fi
+}
+
+# Compute responsive column widths based on the terminal / popup width.
+# Emits "content_w agent_w project_w" on stdout. Fixed columns (state 7,
+# win:pane 10, elapsed 5, cursor 1) plus separators take 35 cols; the
+# remaining "flex" space is split between agent and project, capped so
+# neither field gets silly-wide on a 200-col monitor.
+_dash_layout() {
+  local cols content_w flex agent_w project_w
+  cols=$(tput cols 2>/dev/null || echo 80)
+  content_w=$cols
+  [ "$content_w" -gt 120 ] && content_w=120
+  [ "$content_w" -lt 50 ]  && content_w=50
+  flex=$(( content_w - 35 ))
+  agent_w=$(( flex / 3 ))
+  [ "$agent_w" -lt 6 ]  && agent_w=6
+  [ "$agent_w" -gt 15 ] && agent_w=15
+  project_w=$(( flex - agent_w ))
+  [ "$project_w" -lt 10 ] && project_w=10
+  printf '%d %d %d' "$content_w" "$agent_w" "$project_w"
+}
+
 # Truecolor palette — driven by @tmux-ai-* options via load_palette.
 load_palette
 _DASH_RESET="$C_RESET"
@@ -41,6 +71,13 @@ render() {
   local file; file="$(_state_file)"
   local count; count=$(jq 'length' "$file" 2>/dev/null || echo 0)
 
+  # Compute responsive layout. Column widths scale with the popup so
+  # long project names have room; fixed cells stay fixed.
+  local content_w agent_w project_w
+  read -r content_w agent_w project_w < <(_dash_layout)
+  local state_w=7 winpane_w=10 elapsed_w=5
+  local dash_w=$(( content_w - 2 ))   # dashes inside the frame
+
   # Header
   local dnd_txt=""
   if [ -f "$XDG_RUNTIME_DIR/tmux-ai/dnd.flag" ]; then
@@ -53,15 +90,34 @@ render() {
     return 0
   fi
 
-  # Top of frame
-  printf '%s┌─ tmux-ai — %d agents%s%s ─' "$_DASH_ACCENT" "$count" "$_DASH_RESET" "$dnd_txt"
+  # Border-drawing helper — emits N horizontal dashes.
   local i
-  for i in $(seq 1 40); do printf '─'; done
-  printf '┐\n'
+  local _draw_dashes=""
+  _draw_dashes=$(printf '%*s' "$dash_w" '' | tr ' ' '-' | sed 's/-/─/g')
+
+  # Top frame with inline title: ┌─ tmux-ai — N agents [dnd] ─…┐
+  # The title itself replaces the leading dashes; we pad the rest.
+  local title=" tmux-ai — ${count} agents${dnd_txt} "
+  # Visible length of the title, ignoring the ANSI escapes inside dnd_txt.
+  local title_visible_len
+  title_visible_len=$(printf '%s' "$title" | sed -E $'s/\x1b\\[[0-9;]*m//g' | awk '{print length}')
+  local pad_len=$(( dash_w - title_visible_len - 1 ))
+  [ "$pad_len" -lt 0 ] && pad_len=0
+  printf '%s┌─%s' "$_DASH_ACCENT" "$_DASH_RESET"
+  printf '%b' "$title"
+  printf '%s' "$_DASH_ACCENT"
+  for i in $(seq 1 "$pad_len"); do printf '─'; done
+  printf '┐%s\n' "$_DASH_RESET"
 
   # Column header
-  printf '│ %s %-7s  %-8s  %-15s  %-12s  %-8s │\n' " " "STATE" "AGENT" "PROJECT" "WIN:PANE" "ELAPSED"
-  printf '├──────────────────────────────────────────────────────────────┤\n'
+  printf '│ %s %-*s  %-*s  %-*s  %-*s  %-*s │\n' \
+    " " "$state_w" "STATE" "$agent_w" "AGENT" "$project_w" "PROJECT" \
+    "$winpane_w" "WIN:PANE" "$elapsed_w" "ELAPSED"
+
+  # Row separator
+  printf '%s├' "$_DASH_ACCENT"
+  for i in $(seq 1 "$dash_w"); do printf '─'; done
+  printf '┤%s\n' "$_DASH_RESET"
 
   # Rows
   local entry state agent project win pane_idx turn color pane cursor
@@ -83,15 +139,21 @@ render() {
     else
       cursor=" "
     fi
-    printf '│ %s %s%-7s%s  %-8s  %-15s  %-12s  %-8s │\n' \
-      "$cursor" "$color" "$state" "$_DASH_RESET" \
-      "$agent" "$project" "$win:$pane_idx" "$(fmt_elapsed "$turn")"
+    # Truncate variable fields to fit their assigned widths.
+    local agent_t project_t winpane
+    agent_t=$(_dash_trunc "$agent" "$agent_w")
+    project_t=$(_dash_trunc "$project" "$project_w")
+    winpane=$(_dash_trunc "$win:$pane_idx" "$winpane_w")
+    printf '│ %s %s%-*s%s  %-*s  %-*s  %-*s  %-*s │\n' \
+      "$cursor" "$color" "$state_w" "$state" "$_DASH_RESET" \
+      "$agent_w" "$agent_t" "$project_w" "$project_t" \
+      "$winpane_w" "$winpane" "$elapsed_w" "$(fmt_elapsed "$turn")"
   done < <(jq -c 'to_entries[]' "$file")
 
   # Bottom
-  printf '└'
-  for i in $(seq 1 62); do printf '─'; done
-  printf '┘\n'
+  printf '%s└' "$_DASH_ACCENT"
+  for i in $(seq 1 "$dash_w"); do printf '─'; done
+  printf '┘%s\n' "$_DASH_RESET"
 
   # Footer
   printf '\n%s[j/k] select  [Enter] jump  [q] quit%s\n' "$_DASH_MUTED" "$_DASH_RESET"
@@ -135,7 +197,9 @@ interactive_loop() {
       last_hash="$cur_hash"
     fi
 
-    if read -t 1 -n 1 -s key 2>/dev/null; then
+    # 0.1s poll = 10 Hz. Keystrokes feel instant; CPU cost negligible
+    # because render() only re-emits when the frame hash actually changes.
+    if read -t 0.1 -n 1 -s key 2>/dev/null; then
       case "$key" in
         q|Q) exit 0 ;;
         j)
@@ -167,7 +231,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   if [ "${1:-}" = "--loop" ]; then
     interactive_loop
   elif [ -n "${TMUX:-}" ]; then
-    tmux display-popup -w 90% -h 60% -E "$_SELF --loop"
+    tmux display-popup -w 90% -h 80% -E "$_SELF --loop"
   else
     render
   fi
