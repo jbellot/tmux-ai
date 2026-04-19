@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Ensure the `agents` session exists (creating it if not), and optionally
+# switch the current client to it.
+#
+# Usage:
+#   tmux-ai-goto-agents            # ensure + switch
+#   tmux-ai-goto-agents --ensure   # ensure only
+#
+# Safe to invoke from tmux hooks (swallows all errors, always exits 0).
+
+set -u
+
+_SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
+_BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+
+ensure_only=0
+if [ "${1:-}" = "--ensure" ]; then
+  ensure_only=1
+fi
+
+ensure_session() {
+  if tmux has-session -t agents 2>/dev/null; then
+    return 0
+  fi
+  # Create with sidebar as the initial pane; then split a main pane to the right.
+  tmux new-session -d -s agents -n main "$_BIN_DIR/tmux-ai-sidebar" 2>/dev/null || return 0
+  tmux split-window -h -t agents:main -c "$HOME" 2>/dev/null || true
+  local sidebar_w
+  sidebar_w="$(tmux show-options -gv @tmux-ai-sidebar-width 2>/dev/null || true)"
+  [ -n "$sidebar_w" ] || sidebar_w=32
+  tmux resize-pane -t agents:main.1 -x "$sidebar_w" 2>/dev/null || true
+  tmux select-pane -t agents:main.2 2>/dev/null || true
+}
+
+main() {
+  ensure_session
+  if [ "$ensure_only" -eq 0 ]; then
+    tmux switch-client -t agents 2>/dev/null || true
+  fi
+}
+
+_log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-ai"
+mkdir -p "$_log_dir" 2>/dev/null || true
+{ main; } 2>>"$_log_dir/tmux-ai.log" || true
+exit 0
