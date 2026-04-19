@@ -5,7 +5,9 @@
 # Intentionally swallows errors so a broken hook cannot freeze the agent.
 
 set -u
-TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
+_SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
+_BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$_BIN_DIR/../lib" && pwd)}"
 # shellcheck source=/dev/null
 source "$TMUX_AI_LIB/common.sh"
 # shellcheck source=/dev/null

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -u
-TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$(dirname "$0")/../lib" && pwd)}"
-TMUX_AI_ADAPTERS="${TMUX_AI_ADAPTERS:-$(cd "$(dirname "$0")/../adapters" && pwd)}"
+_SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
+_BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$_BIN_DIR/../lib" && pwd)}"
+TMUX_AI_ADAPTERS="${TMUX_AI_ADAPTERS:-$(cd "$_BIN_DIR/../adapters" && pwd)}"
 # shellcheck source=/dev/null
 source "$TMUX_AI_LIB/common.sh"
 # shellcheck source=/dev/null
@@ -11,7 +13,7 @@ source "$TMUX_AI_LIB/config.sh"
 # shellcheck source=/dev/null
 source "$TMUX_AI_ADAPTERS/generic.sh"
 
-export TMUX_AI_NOTIFY_BIN="${TMUX_AI_NOTIFY_BIN:-$(cd "$(dirname "$0")" && pwd)/tmux-ai-notify}"
+export TMUX_AI_NOTIFY_BIN="${TMUX_AI_NOTIFY_BIN:-$_BIN_DIR/tmux-ai-notify}"
 
 KNOWN_AGENTS_RE='^(claude|opencode)$'
 
