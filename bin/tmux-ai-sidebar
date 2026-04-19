@@ -4,7 +4,7 @@
 
 set -u
 
-_SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
+_SELF="$({ readlink -f "${BASH_SOURCE[0]}" 2>/dev/null; } || { realpath "${BASH_SOURCE[0]}" 2>/dev/null; } || echo "${BASH_SOURCE[0]}")"
 _BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
 TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$_BIN_DIR/../lib" && pwd)}"
 # shellcheck source=/dev/null
@@ -152,12 +152,135 @@ render() {
   printf '%s[d] unreg  [r] refresh%s\n' "$C_MUTED" "$ANSI_RESET"
 }
 
-if [ "${1:-}" = "--render" ]; then
-  render
-  exit 0
-fi
+# ========== Helpers used by the interactive loop ==========
 
-# Interactive mode placeholder — Task 7 replaces this.
-render
-echo
-echo "(interactive loop lands in Task 7)"
+# Return pane-id following the given one (wraps).
+sidebar_next_pane() {
+  local cur="$1" first="" prev="" found=0
+  while IFS= read -r p; do
+    [ -z "$first" ] && first="$p"
+    if [ "$found" -eq 1 ]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+    [ "$p" = "$cur" ] && found=1
+    prev="$p"
+  done < <(state_list)
+  printf '%s\n' "$first"
+}
+
+sidebar_prev_pane() {
+  local cur="$1" prev="" last=""
+  while IFS= read -r p; do
+    if [ "$p" = "$cur" ] && [ -n "$prev" ]; then
+      printf '%s\n' "$prev"
+      return 0
+    fi
+    prev="$p"
+    last="$p"
+  done < <(state_list)
+  # If cur is first (or absent) wrap to last
+  printf '%s\n' "$last"
+}
+
+sidebar_nth_pane() {
+  local n="$1" i=0
+  while IFS= read -r p; do
+    i=$((i + 1))
+    if [ "$i" -eq "$n" ]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  done < <(state_list)
+  return 0
+}
+
+sidebar_first_pane() {
+  state_list | head -n 1
+}
+
+# Jump to the real agent pane via tmux switch-client + select-pane.
+sidebar_jump() {
+  local pane="$1"
+  [ -n "$pane" ] || return 0
+  local session
+  session="$(state_get "$pane" session)"
+  if [ -n "$session" ]; then
+    tmux switch-client -t "$session" 2>/dev/null || true
+  fi
+  tmux select-pane -t "$pane" 2>/dev/null || true
+}
+
+# ========== Interactive loop ==========
+
+interactive_loop() {
+  # Hide cursor; restore on exit.
+  printf '\033[?25l'
+  trap 'printf "\033[?25h\033[2J\033[H"; exit' EXIT INT TERM
+
+  # Force full redraw on resize.
+  trap 'last_hash=""' WINCH
+
+  printf '\033[2J\033[H'
+
+  local selected last_hash="" frame cur_hash key
+  selected="$(sidebar_first_pane)"
+
+  while true; do
+    TMUX_AI_SIDEBAR_SELECTED="$selected" \
+      frame="$(render)"
+    cur_hash="${#frame}:$(printf '%s' "$frame" | cksum)"
+
+    if [ "$cur_hash" != "$last_hash" ]; then
+      printf '\033[H%s\033[J' "$frame"
+      last_hash="$cur_hash"
+    fi
+
+    if read -t 1 -n 1 -s key 2>/dev/null; then
+      case "$key" in
+        j) selected="$(sidebar_next_pane "$selected")" ;;
+        k) selected="$(sidebar_prev_pane "$selected")" ;;
+        g) selected="$(sidebar_first_pane)" ;;
+        G) selected="$(state_list | tail -n 1)" ;;
+        [1-9])
+          local nth
+          nth="$(sidebar_nth_pane "$key")"
+          if [ -n "$nth" ]; then
+            selected="$nth"
+            sidebar_jump "$selected"
+          fi
+          ;;
+        '')  sidebar_jump "$selected" ;;
+        r) last_hash="" ;;
+        d)
+          if [ -n "$selected" ]; then
+            printf '\033[%d;1HUnregister %s? (y/n) ' "$(tput lines 2>/dev/null || echo 24)" "$selected"
+            local confirm
+            read -n 1 -s confirm
+            if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+              state_unregister "$selected"
+              selected="$(sidebar_first_pane)"
+            fi
+            last_hash=""
+          fi
+          ;;
+        q) : ;;
+      esac
+    fi
+
+    # If selected is gone, fall back to first.
+    if [ -n "$selected" ] && [ -z "$(state_get "$selected" agent)" ]; then
+      selected="$(sidebar_first_pane)"
+      last_hash=""
+    fi
+  done
+}
+
+# Only run the entrypoint when executed, not when sourced (for tests).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  if [ "${1:-}" = "--render" ]; then
+    render
+    exit 0
+  fi
+  interactive_loop
+fi
