@@ -17,10 +17,6 @@ idle_after_seconds = 5
 # How long 'working' without output before we flag 'stuck'.
 stuck_after_seconds = 180
 
-[status]
-# Status-line switches from inline icons to aggregated counters above this.
-inline_threshold = 3
-
 [agents.claude]
 # Override the command used to spawn claude. Useful for custom wrappers.
 spawn_command = "claude"
@@ -29,9 +25,27 @@ spawn_command = "claude"
 # tmux-only options (set via `set -g @option 'value'` in your tmux.conf)
 # These are not TOML — they're documented here for discoverability.
 # -------------------------------------------------------------------------
-# @tmux-ai-accent          Accent color used in sidebar/dashboard/status.
-#                          Default: '#82aaff' (cool blue).
-#                          Example: set -g @tmux-ai-accent '#f7768e'
 #
-# @tmux-ai-sidebar-width   Sidebar width in columns in the agents session.
+# The palette below drives the status bar, pane borders, dash popup, and
+# agents-session sidebar. Override a role BEFORE sourcing tmux.conf:
+#
+#   set -g @tmux-ai-accent '#f7768e'   # Tokyo Night pink instead of Kanagawa blue
+#
+# @tmux-ai-accent          Accent: session name, active tab, active
+#                          pane border, "waiting for input" rows.
+#                          Default: '#7e9cd8' (Kanagawa wave-blue)
+# @tmux-ai-fg              Default foreground (inactive tabs, clock).
+#                          Default: '#dcd7ba'
+# @tmux-ai-dim             Muted text (footer hints, idle rows).
+#                          Default: '#727169'
+# @tmux-ai-sep             Hard separators and inactive pane borders.
+#                          Default: '#363646'
+# @tmux-ai-ok              Agent state "ready/done" (●).
+#                          Default: '#98bb6c'
+# @tmux-ai-wait            Agent state "working" (◑) and DND glyph (◌).
+#                          Default: '#dca561'
+# @tmux-ai-stuck           Agent state "stuck" (▲) and "error".
+#                          Default: '#e82424'
+#
+# @tmux-ai-sidebar-width   Agents-session sidebar width in columns.
 #                          Default: 32. Example: set -g @tmux-ai-sidebar-width '40'

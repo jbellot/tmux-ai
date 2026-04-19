@@ -85,6 +85,19 @@ monitor + teleport hub, not a workspace.
 `~/.config/tmux-ai/config.toml` (see `config.toml.example`). All
 settings have sane defaults; the file is optional.
 
+### Theming
+
+The visual surface (status bar, pane borders, dash popup, sidebar) is
+driven by seven `@tmux-ai-*` tmux options. The defaults are the
+Kanagawa Wave palette. To retheme, set any of them *before* sourcing
+`tmux.conf`:
+
+    set -g @tmux-ai-accent '#f7768e'
+    set -g @tmux-ai-stuck  '#ff0000'
+    source-file ~/path/to/tmux-ai/tmux.conf
+
+See `config.toml.example` for the full list of roles with defaults.
+
 ## Troubleshooting
 
 - **No desktop notifications**: check `notify-send` runs from inside a
