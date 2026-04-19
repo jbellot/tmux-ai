@@ -100,9 +100,81 @@ do_uninstall() {
   echo "tmux-ai uninstalled. Your config.toml was left in place."
 }
 
+do_full_install() {
+  mkdir -p "$BIN_DEST" "$XDG_CONFIG_HOME/tmux-ai"
+
+  for s in "${BIN_SCRIPTS[@]}"; do
+    ln -sf "$PROJECT_DIR/bin/$s" "$BIN_DEST/$s"
+  done
+
+  if [ ! -f "$XDG_CONFIG_HOME/tmux-ai/config.toml" ]; then
+    cp "$PROJECT_DIR/config.toml.example" "$XDG_CONFIG_HOME/tmux-ai/config.toml"
+  fi
+
+  local target="$PROJECT_DIR/tmux.conf"
+  if [ -L "$TMUX_CONF" ]; then
+    local cur; cur="$(readlink "$TMUX_CONF")"
+    if [ "$cur" = "$target" ]; then
+      echo "tmux-ai: ~/.tmux.conf already symlinked to $target"
+    else
+      rm -f "$TMUX_CONF"
+      ln -s "$target" "$TMUX_CONF"
+    fi
+  elif [ -f "$TMUX_CONF" ]; then
+    local ts; ts="$(date +%Y%m%d-%H%M%S)"
+    mv "$TMUX_CONF" "${TMUX_CONF}.bak.${ts}"
+    ln -s "$target" "$TMUX_CONF"
+    echo "tmux-ai: backed up existing ~/.tmux.conf to ~/.tmux.conf.bak.${ts}"
+  else
+    ln -s "$target" "$TMUX_CONF"
+  fi
+
+  echo "tmux-ai installed (full mode). Reload: tmux source-file ~/.tmux.conf"
+}
+
+do_full_uninstall() {
+  for s in "${BIN_SCRIPTS[@]}"; do
+    rm -f "$BIN_DEST/$s"
+  done
+
+  local restored=0
+  if [ -L "$TMUX_CONF" ]; then
+    rm -f "$TMUX_CONF"
+    if [ "${1:-}" != "--no-restore" ]; then
+      local latest
+      latest="$(ls -1t "${TMUX_CONF}".bak.* 2>/dev/null | head -n 1)"
+      if [ -n "$latest" ]; then
+        mv "$latest" "$TMUX_CONF"
+        echo "tmux-ai: restored $latest to ~/.tmux.conf"
+        restored=1
+      fi
+    fi
+  fi
+
+  if [ "$restored" -eq 0 ] && [ -f "$TMUX_CONF" ] && grep -qF "$MARKER_BEGIN" "$TMUX_CONF"; then
+    local tmp; tmp="$(mktemp)"
+    awk -v b="$MARKER_BEGIN" -v e="$MARKER_END" '
+      $0==b {skip=1; next}
+      $0==e {skip=0; next}
+      !skip
+    ' "$TMUX_CONF" > "$tmp"
+    mv "$tmp" "$TMUX_CONF"
+  fi
+
+  echo "tmux-ai uninstalled."
+}
+
 case "${1:-install}" in
   install|'') do_check || true; do_install ;;
+  --full|full) do_check || true; do_full_install ;;
   --check|check) do_check ;;
-  --uninstall|uninstall) do_uninstall ;;
-  *) echo "usage: install.sh [install|--check|--uninstall]" >&2; exit 2 ;;
+  --uninstall|uninstall)
+    shift || true
+    if [ -L "$TMUX_CONF" ]; then
+      do_full_uninstall "${1:-}"
+    else
+      do_uninstall
+    fi
+    ;;
+  *) echo "usage: install.sh [install|--full|--check|--uninstall [--no-restore]]" >&2; exit 2 ;;
 esac
