@@ -9,13 +9,14 @@ setup() {
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state"
   export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
   mkdir -p "$XDG_CONFIG_HOME/tmux-ai"
-  # silent notify-send
+  # silent notify-send + tmux stub (so _hex_opt falls back to defaults)
   mkdir -p "$BATS_TEST_TMPDIR/path"
   cat > "$BATS_TEST_TMPDIR/path/notify-send" <<'S'
 #!/usr/bin/env bash
 exit 0
 S
   chmod +x "$BATS_TEST_TMPDIR/path/notify-send"
+  cp "$PROJECT_ROOT/tests/stubs/tmux" "$BATS_TEST_TMPDIR/path/tmux"
   export PATH="$BATS_TEST_TMPDIR/path:$PATH"
   source "$PROJECT_ROOT/lib/common.sh"
   source "$PROJECT_ROOT/lib/state.sh"
@@ -50,7 +51,8 @@ S
     "$PROJECT_ROOT/tests/stubs/fake-claude" <<< "prompt_submit"
 
   run "$PROJECT_ROOT/bin/tmux-ai-status"
-  assert_output --partial "e2e"
+  # New format: palette #[fg=] span + glyph + count; project name not emitted.
+  assert_output --partial "◑1"
 }
 
 @test "dash renders the live agent" {

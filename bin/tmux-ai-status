@@ -10,64 +10,51 @@ source "$TMUX_AI_LIB/state.sh"
 # shellcheck source=/dev/null
 source "$TMUX_AI_LIB/config.sh"
 
-ICON_WORK="⚙"
-ICON_WAIT="⏸"
-ICON_DONE="✓"
-ICON_STUCK="✗"
-ICON_ERROR="!"
-
-icon_for() {
-  case "$1" in
-    working) printf '%s' "$ICON_WORK" ;;
-    waiting) printf '%s' "$ICON_WAIT" ;;
-    done)    printf '%s' "$ICON_DONE" ;;
-    stuck)   printf '%s' "$ICON_STUCK" ;;
-    error)   printf '%s' "$ICON_ERROR" ;;
-    *)       printf '·' ;;
-  esac
-}
+# Glyphs (plain Unicode — no Nerd Font assumed).
+GLYPH_DONE='●'
+GLYPH_WAIT='◐'   # waiting for user input
+GLYPH_WORK='◑'   # working (turn in flight)
+GLYPH_STUCK='▲'
 
 render() {
   state_init
-  local file count threshold
-  file="$(_state_file)"
-  count=$(jq 'length' "$file" 2>/dev/null || echo 0)
-  threshold=$(config_get status inline_threshold 3)
+  local file; file="$(_state_file)"
 
-  [ "$count" -eq 0 ] && return 0
+  # One jq pass tallies all four state-counts plus the total. Avoids five
+  # interpreter startups per status-interval tick.
+  local counts
+  counts=$(jq -r '[
+    ([.[] | select(.state=="done")]    | length),
+    ([.[] | select(.state=="waiting")] | length),
+    ([.[] | select(.state=="working")] | length),
+    ([.[] | select(.state=="stuck")]   | length)
+  ] | @tsv' "$file" 2>/dev/null) || counts=$'0\t0\t0\t0'
 
-  if [ "$count" -le "$threshold" ]; then
-    # inline: "⚙ foo ⏸ bar ✓ baz"
-    local out=""
-    while IFS= read -r entry; do
-      local project state
-      project=$(echo "$entry" | jq -r '.project // "?"')
-      state=$(echo "$entry"   | jq -r '.state // "idle"')
-      out="${out}$(icon_for "$state") ${project} "
-    done < <(jq -c '.[]' "$file")
-    printf '%s' "${out% }"
-  else
-    # aggregated: "AI: 2⚙ 1⏸ 3✓"
-    local w wa d s
-    w=$(jq  '[.[] | select(.state=="working")] | length' "$file")
-    wa=$(jq '[.[] | select(.state=="waiting")] | length' "$file")
-    d=$(jq  '[.[] | select(.state=="done")] | length'    "$file")
-    s=$(jq  '[.[] | select(.state=="stuck")] | length'   "$file")
-    local parts=()
-    [ "$w"  -gt 0 ] && parts+=("${w}${ICON_WORK}")
-    [ "$wa" -gt 0 ] && parts+=("${wa}${ICON_WAIT}")
-    [ "$d"  -gt 0 ] && parts+=("${d}${ICON_DONE}")
-    [ "$s"  -gt 0 ] && parts+=("${s}${ICON_STUCK}")
-    printf 'AI: %s' "${parts[*]}"
+  local d wa w s
+  IFS=$'\t' read -r d wa w s <<< "${counts:-0	0	0	0}"
+
+  if [ $((d + wa + w + s)) -eq 0 ]; then
+    return 0
   fi
+
+  local col_done col_waiting col_working col_stuck
+  col_done=$(_tmux_opt    @tmux-ai-ok     '#98bb6c')
+  col_waiting=$(_tmux_opt @tmux-ai-accent '#7e9cd8')
+  col_working=$(_tmux_opt @tmux-ai-wait   '#dca561')
+  col_stuck=$(_tmux_opt   @tmux-ai-stuck  '#e82424')
+
+  local out=""
+  [ "$d"  -gt 0 ] && out+="#[fg=${col_done}]${GLYPH_DONE}${d} "
+  [ "$wa" -gt 0 ] && out+="#[fg=${col_waiting}]${GLYPH_WAIT}${wa} "
+  [ "$w"  -gt 0 ] && out+="#[fg=${col_working}]${GLYPH_WORK}${w} "
+  [ "$s"  -gt 0 ] && out+="#[fg=${col_stuck}]${GLYPH_STUCK}${s} "
+
+  printf '%s' "${out% }"
 }
 
 mkdir -p "$XDG_STATE_HOME/tmux-ai" 2>/dev/null || true
 {
   render
-  # Kick a detect tick in the background so stuck detection + GC run on
-  # every status-interval without a separate daemon. Suppressed in tests
-  # via TMUX_AI_STATUS_NO_DETECT.
   if [ -z "${TMUX_AI_STATUS_NO_DETECT:-}" ]; then
     "$_BIN_DIR/tmux-ai-detect" </dev/null >/dev/null 2>&1 &
     disown 2>/dev/null || true
