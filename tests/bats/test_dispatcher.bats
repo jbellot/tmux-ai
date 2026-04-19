@@ -21,6 +21,7 @@ setup() {
   assert_output --partial "detect"
   assert_output --partial "list"
   assert_output --partial "log"
+  assert_output --partial "goto"
 }
 
 @test "tmux-ai list prints registered agents" {
@@ -49,4 +50,16 @@ setup() {
   state_init
   run "$PROJECT_ROOT/bin/tmux-ai" log "%999"
   [ "$status" -ne 0 ]
+}
+
+@test "tmux-ai goto delegates to tmux-ai-goto-agents with args" {
+  mkdir -p "$BATS_TEST_TMPDIR/path"
+  cat > "$BATS_TEST_TMPDIR/path/tmux-ai-goto-agents" <<'STUB'
+#!/usr/bin/env bash
+echo "goto-agents called with: $*"
+STUB
+  chmod +x "$BATS_TEST_TMPDIR/path/tmux-ai-goto-agents"
+  TMUX_AI_BIN_DIR="$BATS_TEST_TMPDIR/path" \
+    run "$PROJECT_ROOT/bin/tmux-ai" goto --ensure
+  assert_output --partial "--ensure"
 }

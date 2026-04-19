@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 _SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
-BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+BIN_DIR="${TMUX_AI_BIN_DIR:-$(cd "$(dirname "$_SELF")" && pwd)}"
 TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$BIN_DIR/../lib" && pwd)}"
 # shellcheck source=/dev/null
 source "$TMUX_AI_LIB/common.sh"
@@ -20,6 +20,7 @@ Commands:
   detect                Run a detect tick (stuck + auto-register)
   list                  Print registered agents as a table
   log <pane_id>         Open the agent log for <pane_id> in \$PAGER
+  goto [--ensure]       Switch to the "agents" session (create if missing)
   help                  Show this message
 EOF
 }
@@ -62,6 +63,7 @@ case "${1:-help}" in
   detect) shift; exec "$BIN_DIR/tmux-ai-detect" "$@" ;;
   list)   cmd_list ;;
   log)    shift; cmd_log "$@" ;;
+  goto)   shift; exec "$BIN_DIR/tmux-ai-goto-agents" "$@" ;;
   help|-h|--help) usage ;;
   *) echo "usage: tmux-ai <command>; tmux-ai help for details" >&2; exit 2 ;;
 esac
