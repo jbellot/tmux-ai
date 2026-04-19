@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# tmux-ai sidebar — narrow-pane live status view.
+# Task 6 ships the renderer only (interactive loop lands in Task 7).
+
+set -u
+
+_SELF="$({ readlink -f "$0" 2>/dev/null; } || { realpath "$0" 2>/dev/null; } || echo "$0")"
+_BIN_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+TMUX_AI_LIB="${TMUX_AI_LIB:-$(cd "$_BIN_DIR/../lib" && pwd)}"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/common.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/state.sh"
+# shellcheck source=/dev/null
+source "$TMUX_AI_LIB/config.sh"
+
+# ANSI colors — 8-color + bold for max terminal compatibility.
+ANSI_RESET=$'\033[0m'
+ANSI_DIM=$'\033[2m'
+ANSI_BOLD=$'\033[1m'
+C_WORK=$'\033[33m'
+C_WAIT=$'\033[35m'
+C_DONE=$'\033[32m'
+C_STUCK=$'\033[31m'
+C_ERROR=$'\033[1;31m'
+C_IDLE=$'\033[2m'
+C_ACCENT=$'\033[1;34m'
+C_MUTED=$'\033[2;37m'
+
+ICON_WORK="⚙"
+ICON_WAIT="⏸"
+ICON_DONE="✓"
+ICON_STUCK="✗"
+ICON_ERROR="!"
+ICON_IDLE="·"
+CURSOR="▸"
+CURSOR_EMPTY=" "
+
+sidebar_width() {
+  local w
+  w="$(tmux show-options -gv @tmux-ai-sidebar-width 2>/dev/null || true)"
+  [ -n "$w" ] || w=32
+  printf '%s\n' "$w"
+}
+
+color_for() {
+  case "$1" in
+    working) printf '%s' "$C_WORK" ;;
+    waiting) printf '%s' "$C_WAIT" ;;
+    done)    printf '%s' "$C_DONE" ;;
+    stuck)   printf '%s' "$C_STUCK" ;;
+    error)   printf '%s' "$C_ERROR" ;;
+    idle|*)  printf '%s' "$C_IDLE" ;;
+  esac
+}
+
+icon_for() {
+  case "$1" in
+    working) printf '%s' "$ICON_WORK" ;;
+    waiting) printf '%s' "$ICON_WAIT" ;;
+    done)    printf '%s' "$ICON_DONE" ;;
+    stuck)   printf '%s' "$ICON_STUCK" ;;
+    error)   printf '%s' "$ICON_ERROR" ;;
+    idle|*)  printf '%s' "$ICON_IDLE" ;;
+  esac
+}
+
+fmt_elapsed() {
+  local start now diff mm ss hh
+  start="${1:-0}"
+  [ "$start" = "" ] && start=0
+  [ "$start" -eq 0 ] && { printf '  -  '; return; }
+  now=$(date +%s)
+  diff=$((now - start))
+  mm=$((diff / 60))
+  ss=$((diff % 60))
+  if [ "$mm" -ge 100 ]; then
+    hh=$((mm / 60))
+    mm=$((mm % 60))
+    printf '%02d:%02d' "$hh" "$mm"
+  else
+    printf '%02d:%02d' "$mm" "$ss"
+  fi
+}
+
+# Truncate a string to N visible chars, adding … if cut.
+trunc() {
+  local s="$1" n="$2"
+  if [ "${#s}" -le "$n" ]; then
+    printf '%s' "$s"
+  else
+    printf '%s…' "${s:0:$((n - 1))}"
+  fi
+}
+
+render_empty() {
+  local w; w=$(sidebar_width)
+  local pad_center
+  pad_center=$(( (w - 10) / 2 ))
+  [ "$pad_center" -lt 0 ] && pad_center=0
+  printf '\n\n%*sno agents\n\n' "$pad_center" ""
+  pad_center=$(( (w - 19) / 2 ))
+  [ "$pad_center" -lt 0 ] && pad_center=0
+  printf '%s%*sprefix + A to spawn%s\n' "$C_MUTED" "$pad_center" "" "$ANSI_RESET"
+}
+
+render() {
+  state_init
+  local file; file="$(_state_file)"
+  local count; count=$(jq 'length' "$file" 2>/dev/null || echo 0)
+  local selected="${TMUX_AI_SIDEBAR_SELECTED:-}"
+  local w; w=$(sidebar_width)
+
+  if [ "$count" -eq 0 ]; then
+    render_empty
+    return 0
+  fi
+
+  # Title strip
+  printf '%s%s agents%s\n' "$C_ACCENT" "$count" "$ANSI_RESET"
+  printf '%s\n' "$(printf '%*s' "$w" '' | tr ' ' '─')"
+
+  # One row per entry
+  local entry pane state project turn icon color cursor proj_col
+  proj_col=$(( w - 10 ))
+  [ "$proj_col" -lt 4 ] && proj_col=4
+
+  while IFS= read -r entry; do
+    pane=$(echo    "$entry" | jq -r '.key')
+    state=$(echo   "$entry" | jq -r '.value.state // "idle"')
+    project=$(echo "$entry" | jq -r '.value.project // .key')
+    turn=$(echo    "$entry" | jq -r '.value.turn_started_ts // 0')
+    icon="$(icon_for "$state")"
+    color="$(color_for "$state")"
+    if [ "$pane" = "$selected" ]; then
+      cursor="$CURSOR"
+    else
+      cursor="$CURSOR_EMPTY"
+    fi
+    local project_padded
+    project_padded=$(printf '%-*s' "$proj_col" "$(trunc "$project" "$proj_col")")
+    printf '%s %s%s%s %s %s\n' \
+      "$cursor" \
+      "$color" "$icon" "$ANSI_RESET" \
+      "$project_padded" \
+      "$(fmt_elapsed "$turn")"
+  done < <(jq -c 'to_entries[]' "$file")
+
+  # Footer
+  printf '\n'
+  printf '%s[j/k] move  [Enter] jump%s\n' "$C_MUTED" "$ANSI_RESET"
+  printf '%s[d] unreg  [r] refresh%s\n' "$C_MUTED" "$ANSI_RESET"
+}
+
+if [ "${1:-}" = "--render" ]; then
+  render
+  exit 0
+fi
+
+# Interactive mode placeholder — Task 7 replaces this.
+render
+echo
+echo "(interactive loop lands in Task 7)"
