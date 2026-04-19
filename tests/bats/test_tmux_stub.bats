@@ -29,3 +29,13 @@ setup() {
   assert_success
   assert_output ""
 }
+
+@test "tmux stub honours TMUX_STUB_EXITS per subcommand" {
+  export TMUX_STUB_EXITS="$BATS_TEST_TMPDIR/tmux_exits"
+  echo "has-session::1" > "$TMUX_STUB_EXITS"
+  run tmux has-session -t agents
+  [ "$status" -eq 1 ]
+  # Default subcommand still exits 0
+  run tmux list-panes
+  assert_success
+}
