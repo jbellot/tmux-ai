@@ -24,3 +24,14 @@ inline_threshold = 3
 [agents.claude]
 # Override the command used to spawn claude. Useful for custom wrappers.
 spawn_command = "claude"
+
+# -------------------------------------------------------------------------
+# tmux-only options (set via `set -g @option 'value'` in your tmux.conf)
+# These are not TOML — they're documented here for discoverability.
+# -------------------------------------------------------------------------
+# @tmux-ai-accent          Accent color used in sidebar/dashboard/status.
+#                          Default: '#82aaff' (cool blue).
+#                          Example: set -g @tmux-ai-accent '#f7768e'
+#
+# @tmux-ai-sidebar-width   Sidebar width in columns in the agents session.
+#                          Default: 32. Example: set -g @tmux-ai-sidebar-width '40'
