@@ -66,7 +66,7 @@ do_install() {
     {
       echo ""
       echo "$MARKER_BEGIN"
-      echo "source-file $PROJECT_DIR/tmux-ai.tmux.conf"
+      echo "source-file $PROJECT_DIR/tmux.conf"
       echo "$MARKER_END"
     } >> "$TMUX_CONF"
   fi

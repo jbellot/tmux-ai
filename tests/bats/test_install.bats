@@ -49,3 +49,11 @@ setup() {
   run grep -c '# >>> tmux-ai >>>' "$HOME/.tmux.conf"
   assert_output "0"
 }
+
+@test "install.sh marker block sources tmux.conf not tmux-ai.tmux.conf" {
+  "$PROJECT_ROOT/install.sh"
+  run grep -F "source-file $PROJECT_ROOT/tmux.conf" "$HOME/.tmux.conf"
+  assert_success
+  run grep -F "source-file $PROJECT_ROOT/tmux-ai.tmux.conf" "$HOME/.tmux.conf"
+  [ "$status" -ne 0 ]
+}
