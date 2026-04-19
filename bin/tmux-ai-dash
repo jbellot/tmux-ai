@@ -297,7 +297,17 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   if [ "${1:-}" = "--loop" ]; then
     interactive_loop
   elif [ -n "${TMUX:-}" ]; then
-    tmux display-popup -w 90% -h 80% -E "$_SELF --loop"
+    # Size the popup to fit the content so the table doesn't float in
+    # the top-left of an oversized frame. Width is the max table width
+    # (content_w ≤ 81) + 2 char breathing room. Height grows with agent
+    # count but stays in [14, 40] — tmux clamps to terminal on small
+    # screens. Positioning stays at tmux's default centre.
+    _file="$(tmux_ai_runtime_dir)/agents.json"
+    _count=$(jq 'length' "$_file" 2>/dev/null || echo 0)
+    _popup_h=$((_count + 10))
+    [ "$_popup_h" -lt 14 ] && _popup_h=14
+    [ "$_popup_h" -gt 40 ] && _popup_h=40
+    tmux display-popup -w 83 -h "$_popup_h" -E "$_SELF --loop"
   else
     render
   fi
