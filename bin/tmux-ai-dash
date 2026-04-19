@@ -19,19 +19,20 @@ fmt_elapsed() {
   printf '%02d:%02d' "$mm" "$ss"
 }
 
-# ANSI palette (local to render).
-_DASH_RESET=$'\033[0m'
-_DASH_DIM=$'\033[2m'
-_DASH_ACCENT=$'\033[1;34m'
-_DASH_MUTED=$'\033[2;37m'
+# Truecolor palette — driven by @tmux-ai-* options via load_palette.
+load_palette
+_DASH_RESET="$C_RESET"
+_DASH_DIM="$C_DIM_ATTR"
+_DASH_ACCENT="${C_ACCENT}${C_BOLD}"
+_DASH_MUTED="$C_DIM"
 _dash_color_for() {
   case "$1" in
-    working) printf '\033[33m' ;;
-    waiting) printf '\033[35m' ;;
-    done)    printf '\033[32m' ;;
-    stuck)   printf '\033[31m' ;;
-    error)   printf '\033[1;31m' ;;
-    *)       printf '\033[2m' ;;
+    working) printf '%s' "$C_WAIT"  ;;
+    waiting) printf '%s' "$C_ACCENT" ;;
+    done)    printf '%s' "$C_OK"    ;;
+    stuck)   printf '%s' "$C_STUCK" ;;
+    error)   printf '%s%s' "$C_STUCK" "$C_BOLD" ;;
+    *)       printf '%s' "$C_DIM_ATTR" ;;
   esac
 }
 
@@ -43,7 +44,7 @@ render() {
   # Header
   local dnd_txt=""
   if [ -f "$XDG_RUNTIME_DIR/tmux-ai/dnd.flag" ]; then
-    dnd_txt="  ${_DASH_ACCENT}🔕 DND on${_DASH_RESET}"
+    dnd_txt="  ${_DASH_ACCENT}◌ DND on${_DASH_RESET}"
   fi
 
   if [ "$count" -eq 0 ]; then

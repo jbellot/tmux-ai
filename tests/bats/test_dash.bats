@@ -7,6 +7,11 @@ setup() {
   PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   export XDG_RUNTIME_DIR="$BATS_TEST_TMPDIR/run"
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state"
+  # Put the tmux stub in PATH so load_palette falls back to hardcoded defaults
+  # (stub returns empty for show-options when TMUX_STUB_RESPONSES is unset).
+  mkdir -p "$BATS_TEST_TMPDIR/path"
+  cp "$PROJECT_ROOT/tests/stubs/tmux" "$BATS_TEST_TMPDIR/path/tmux"
+  export PATH="$BATS_TEST_TMPDIR/path:$PATH"
   source "$PROJECT_ROOT/lib/common.sh"
   source "$PROJECT_ROOT/lib/state.sh"
 }
@@ -30,18 +35,28 @@ setup() {
   assert_output --partial "no agents"
 }
 
-@test "dash render uses ANSI color for working state" {
+@test "dash render uses truecolor wait color for working state" {
   state_init
   state_register "%1" agent=claude project=foo state=working turn_started_ts="$(date +%s)"
   run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
-  assert_output --partial $'\033[33m'
+  # @tmux-ai-wait default #dca561 → 220;165;97
+  assert_output --partial $'\033[38;2;220;165;97m'
 }
 
-@test "dash render uses ANSI color for stuck state" {
+@test "dash render uses truecolor stuck color for stuck state" {
   state_init
   state_register "%1" agent=claude project=foo state=stuck turn_started_ts="$(date +%s)"
   run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
-  assert_output --partial $'\033[31m'
+  # @tmux-ai-stuck default #e82424 → 232;36;36
+  assert_output --partial $'\033[38;2;232;36;36m'
+}
+
+@test "dash render uses accent color for waiting state (replaces magenta)" {
+  state_init
+  state_register "%1" agent=claude project=foo state=waiting turn_started_ts="$(date +%s)"
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  # @tmux-ai-accent default #7e9cd8 → 126;156;216
+  assert_output --partial $'\033[38;2;126;156;216m'
 }
 
 @test "dash render draws a unicode box frame" {
@@ -65,7 +80,8 @@ setup() {
   state_init
   state_register "%1" agent=claude project=foo state=working
   run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
-  assert_output --partial "DND"
+  # New DND glyph: ◌ (replaces 🔕)
+  assert_output --partial "◌ DND"
 }
 
 @test "dash --render shows selection cursor on first row by default" {
