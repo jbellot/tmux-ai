@@ -61,14 +61,16 @@ CLI (also available as symlinked binaries):
     tmux-ai detect          # run one detect tick (debugging)
     tmux-ai log <pane_id>   # open log in $PAGER
 
-## Agents session
+## Agents session (optional)
 
-`prefix + g` switches to the `agents` session (auto-created on first
-tmux attach). The session has a narrow sidebar on the left showing
-every registered agent, and an open shell on the right for you to use
-however you like.
+Off by default — the popup dashboard (`prefix + a`) covers the same
+use case. To opt in, set this before sourcing `tmux.conf`:
 
-Inside the sidebar pane:
+    set -g @tmux-ai-agents-session 'on'
+
+When enabled, `prefix + g` switches to the auto-provisioned `agents`
+session: a narrow sidebar on the left showing every registered agent,
+and an open shell on the right. Inside the sidebar pane:
 
 - `j` / `k` — move cursor up/down
 - `1..9` — jump by row number

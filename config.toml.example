@@ -49,3 +49,10 @@ spawn_command = "claude"
 #
 # @tmux-ai-sidebar-width   Agents-session sidebar width in columns.
 #                          Default: 32. Example: set -g @tmux-ai-sidebar-width '40'
+#
+# @tmux-ai-agents-session  'on' / 'off' — auto-provision a dedicated
+#                          tmux session with a live agent sidebar and
+#                          bind prefix + g to jump into it.
+#                          Default: 'off' (the popup dashboard via
+#                          prefix + a covers the same use case without
+#                          the persistent-session overhead).
