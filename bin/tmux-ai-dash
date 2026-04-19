@@ -59,12 +59,14 @@ render() {
   printf '┐\n'
 
   # Column header
-  printf '│  %-7s  %-8s  %-15s  %-12s  %-8s │\n' "STATE" "AGENT" "PROJECT" "WIN:PANE" "ELAPSED"
+  printf '│ %s %-7s  %-8s  %-15s  %-12s  %-8s │\n' " " "STATE" "AGENT" "PROJECT" "WIN:PANE" "ELAPSED"
   printf '├──────────────────────────────────────────────────────────────┤\n'
 
   # Rows
-  local entry state agent project win pane_idx turn color
+  local entry state agent project win pane_idx turn color pane cursor
+  local _dash_cursor_emitted=""
   while IFS= read -r entry; do
+    pane=$(echo     "$entry" | jq -r '.key')
     state=$(echo    "$entry" | jq -r '.value.state // "?"')
     agent=$(echo    "$entry" | jq -r '.value.agent // "?"')
     project=$(echo  "$entry" | jq -r '.value.project // "?"')
@@ -72,8 +74,16 @@ render() {
     pane_idx=$(echo "$entry" | jq -r '.value.pane_index // "?"')
     turn=$(echo     "$entry" | jq -r '.value.turn_started_ts // 0')
     color="$(_dash_color_for "$state")"
-    printf '│  %s%-7s%s  %-8s  %-15s  %-12s  %-8s │\n' \
-      "$color" "$state" "$_DASH_RESET" \
+    if [ "$pane" = "${TMUX_AI_DASH_SELECTED:-}" ]; then
+      cursor="▸"
+    elif [ -z "${TMUX_AI_DASH_SELECTED:-}" ] && [ -z "$_dash_cursor_emitted" ]; then
+      cursor="▸"
+      _dash_cursor_emitted=1
+    else
+      cursor=" "
+    fi
+    printf '│ %s %s%-7s%s  %-8s  %-15s  %-12s  %-8s │\n' \
+      "$cursor" "$color" "$state" "$_DASH_RESET" \
       "$agent" "$project" "$win:$pane_idx" "$(fmt_elapsed "$turn")"
   done < <(jq -c 'to_entries[]' "$file")
 
@@ -96,34 +106,48 @@ fi
 # Redraws in-place only when the rendered frame actually changes — avoids the
 # clear+repaint flicker that makes the dashboard feel like it's reloading.
 interactive_loop() {
-  # Hide cursor; restore on any exit.
   printf '\033[?25l'
   trap 'printf "\033[?25h\033[2J\033[H"; exit' EXIT INT TERM
 
-  # Paint a full clear once so the first frame lands on a clean screen.
   printf '\033[2J\033[H'
 
-  local last_hash="" frame cur_hash key
+  local selected last_hash="" frame cur_hash key
+  selected="$(state_list | head -n 1)"
+
   while true; do
-    frame="$(render)"
+    TMUX_AI_DASH_SELECTED="$selected" \
+      frame="$(render)"
     cur_hash="${#frame}:$(printf '%s' "$frame" | cksum)"
 
     if [ "$cur_hash" != "$last_hash" ]; then
-      # Cursor home + print + clear-to-end-of-screen.
-      # No full clear → no flicker, and leftover lines from a shorter
-      # previous frame get wiped by the trailing \033[J.
       printf '\033[H%s\033[J' "$frame"
       last_hash="$cur_hash"
     fi
 
-    # Poll 1s for keypress.
-    if read -t 1 -n 1 -s key; then
+    if read -t 1 -n 1 -s key 2>/dev/null; then
       case "$key" in
         q|Q) exit 0 ;;
-        '')  # Enter
-          local pane
-          pane=$(state_list | fzf --height=40% --prompt='attach> ') || exit 0
-          [ -n "$pane" ] && tmux switch-client -t "$pane" 2>/dev/null
+        j)
+          local next
+          next="$(state_list | awk -v cur="$selected" '{if (prev==cur) {print; exit} prev=$0}')"
+          [ -n "$next" ] && selected="$next"
+          ;;
+        k)
+          local prev
+          prev="$(state_list | awk -v cur="$selected" '{if ($0==cur) {print last; exit} last=$0}')"
+          [ -n "$prev" ] && selected="$prev"
+          ;;
+        [1-9])
+          local nth
+          nth="$(state_list | sed -n "${key}p")"
+          [ -n "$nth" ] && selected="$nth"
+          ;;
+        '')
+          if [ -n "$selected" ]; then
+            local session; session="$(state_get "$selected" session)"
+            [ -n "$session" ] && tmux switch-client -t "$session" 2>/dev/null
+            tmux select-pane -t "$selected" 2>/dev/null
+          fi
           exit 0
           ;;
       esac

@@ -67,3 +67,19 @@ setup() {
   run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
   assert_output --partial "DND"
 }
+
+@test "dash --render shows selection cursor on first row by default" {
+  state_init
+  state_register "%1" agent=claude project=foo state=working turn_started_ts="$(date +%s)"
+  state_register "%2" agent=claude project=bar state=done
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  assert_output --partial "▸"
+}
+
+@test "dash --render moves cursor via TMUX_AI_DASH_SELECTED env" {
+  state_init
+  state_register "%1" agent=claude project=foo state=working
+  state_register "%2" agent=claude project=bar state=done
+  TMUX_AI_DASH_SELECTED="%2" run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  [[ "$output" == *"▸"*"bar"* ]] || [[ "$output" == *"bar"*"▸"* ]]
+}
