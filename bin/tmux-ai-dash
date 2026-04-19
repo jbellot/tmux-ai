@@ -56,12 +56,31 @@ if [ "${1:-}" = "--render" ]; then
   exit 0
 fi
 
-# Interactive mode: open display-popup that runs this script on a refresh loop
+# Interactive mode: open display-popup that runs this script on a refresh loop.
+# Redraws in-place only when the rendered frame actually changes — avoids the
+# clear+repaint flicker that makes the dashboard feel like it's reloading.
 interactive_loop() {
+  # Hide cursor; restore on any exit.
+  printf '\033[?25l'
+  trap 'printf "\033[?25h\033[2J\033[H"; exit' EXIT INT TERM
+
+  # Paint a full clear once so the first frame lands on a clean screen.
+  printf '\033[2J\033[H'
+
+  local last_hash="" frame cur_hash key
   while true; do
-    clear
-    render
-    # Read with 1s timeout; any keypress exits the loop
+    frame="$(render)"
+    cur_hash="${#frame}:$(printf '%s' "$frame" | cksum)"
+
+    if [ "$cur_hash" != "$last_hash" ]; then
+      # Cursor home + print + clear-to-end-of-screen.
+      # No full clear → no flicker, and leftover lines from a shorter
+      # previous frame get wiped by the trailing \033[J.
+      printf '\033[H%s\033[J' "$frame"
+      last_hash="$cur_hash"
+    fi
+
+    # Poll 1s for keypress.
     if read -t 1 -n 1 -s key; then
       case "$key" in
         q|Q) exit 0 ;;
