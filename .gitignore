@@ -4,3 +4,6 @@
 # runtime state (shouldn't end up in repo, but belt+braces)
 *.log
 *.corrupt.*
+
+# brainstorming companion scratch
+.superpowers/
