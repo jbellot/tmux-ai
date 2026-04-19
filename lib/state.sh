@@ -101,3 +101,53 @@ state_dump() {
   _state_validate
   cat "$f"
 }
+
+# Convert "#RRGGBB" or "RRGGBB" into a truecolor foreground ANSI escape.
+# Used by dash + sidebar (which emit ANSI) to stay in lock-step with the
+# status bar (which uses tmux's own #[fg=#hex] syntax). We don't do bg
+# escapes because the design leaves background at terminal default.
+hex_to_truecolor_fg() {
+  local hex="${1#\#}"
+  # Reject anything that isn't exactly 6 hex digits — keeps us quiet on
+  # malformed user-supplied @tmux-ai-* options instead of leaking bash
+  # arithmetic errors to stderr seven times on every script invocation.
+  if [[ ! "$hex" =~ ^[0-9A-Fa-f]{6}$ ]]; then
+    return 1
+  fi
+  printf '\033[38;2;%d;%d;%dm' \
+    "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))"
+}
+
+# Read a tmux option with a fallback. Returns the option value, or $2 if
+# tmux isn't on PATH / the option is unset. Safe to call outside tmux.
+_tmux_opt() {
+  local key="$1" default="$2" val
+  val=$(tmux show-options -gv "$key" 2>/dev/null || printf '')
+  [ -n "$val" ] && printf '%s' "$val" || printf '%s' "$default"
+}
+
+# Populate C_ACCENT, C_FG, C_DIM, C_SEP, C_OK, C_WAIT, C_STUCK with
+# truecolor escapes derived from @tmux-ai-<role> options, plus
+# C_RESET / C_BOLD / C_DIM_ATTR for convenience.
+#
+# Defaults are the Kanagawa Wave palette documented in
+# docs/superpowers/specs/2026-04-19-tmux-visual-design.md.
+load_palette() {
+  C_ACCENT=$(hex_to_truecolor_fg "$(_tmux_opt @tmux-ai-accent '#7e9cd8')" \
+    || hex_to_truecolor_fg '#7e9cd8')
+  C_FG=$(hex_to_truecolor_fg     "$(_tmux_opt @tmux-ai-fg     '#dcd7ba')" \
+    || hex_to_truecolor_fg '#dcd7ba')
+  C_DIM=$(hex_to_truecolor_fg    "$(_tmux_opt @tmux-ai-dim    '#727169')" \
+    || hex_to_truecolor_fg '#727169')
+  C_SEP=$(hex_to_truecolor_fg    "$(_tmux_opt @tmux-ai-sep    '#363646')" \
+    || hex_to_truecolor_fg '#363646')
+  C_OK=$(hex_to_truecolor_fg     "$(_tmux_opt @tmux-ai-ok     '#98bb6c')" \
+    || hex_to_truecolor_fg '#98bb6c')
+  C_WAIT=$(hex_to_truecolor_fg   "$(_tmux_opt @tmux-ai-wait   '#dca561')" \
+    || hex_to_truecolor_fg '#dca561')
+  C_STUCK=$(hex_to_truecolor_fg  "$(_tmux_opt @tmux-ai-stuck  '#e82424')" \
+    || hex_to_truecolor_fg '#e82424')
+  C_RESET=$'\033[0m'
+  C_BOLD=$'\033[1m'
+  C_DIM_ATTR=$'\033[2m'
+}
