@@ -19,35 +19,71 @@ fmt_elapsed() {
   printf '%02d:%02d' "$mm" "$ss"
 }
 
+# ANSI palette (local to render).
+_DASH_RESET=$'\033[0m'
+_DASH_DIM=$'\033[2m'
+_DASH_ACCENT=$'\033[1;34m'
+_DASH_MUTED=$'\033[2;37m'
+_dash_color_for() {
+  case "$1" in
+    working) printf '\033[33m' ;;
+    waiting) printf '\033[35m' ;;
+    done)    printf '\033[32m' ;;
+    stuck)   printf '\033[31m' ;;
+    error)   printf '\033[1;31m' ;;
+    *)       printf '\033[2m' ;;
+  esac
+}
+
 render() {
   state_init
   local file; file="$(_state_file)"
   local count; count=$(jq 'length' "$file" 2>/dev/null || echo 0)
 
+  # Header
+  local dnd_txt=""
+  if [ -f "$XDG_RUNTIME_DIR/tmux-ai/dnd.flag" ]; then
+    dnd_txt="  ${_DASH_ACCENT}🔕 DND on${_DASH_RESET}"
+  fi
+
   if [ "$count" -eq 0 ]; then
-    echo "tmux-ai — no agents registered"
-    echo
-    echo "[q] quit"
+    printf '%stmux-ai — no agents registered%s%s\n\n' "$_DASH_ACCENT" "$_DASH_RESET" "$dnd_txt"
+    printf '%s[q] quit%s\n' "$_DASH_MUTED" "$_DASH_RESET"
     return 0
   fi
 
-  printf '%-7s  %-8s  %-15s  %-12s  %-8s\n' "STATE" "AGENT" "PROJECT" "WIN:PANE" "ELAPSED"
-  printf '%s\n' "-----------------------------------------------------------------"
+  # Top of frame
+  printf '%s┌─ tmux-ai — %d agents%s%s ─' "$_DASH_ACCENT" "$count" "$_DASH_RESET" "$dnd_txt"
+  local i
+  for i in $(seq 1 40); do printf '─'; done
+  printf '┐\n'
 
+  # Column header
+  printf '│  %-7s  %-8s  %-15s  %-12s  %-8s │\n' "STATE" "AGENT" "PROJECT" "WIN:PANE" "ELAPSED"
+  printf '├──────────────────────────────────────────────────────────────┤\n'
+
+  # Rows
+  local entry state agent project win pane_idx turn color
   while IFS= read -r entry; do
-    local state agent project win pane_idx turn
-    state=$(echo   "$entry" | jq -r '.value.state // "?"')
-    agent=$(echo   "$entry" | jq -r '.value.agent // "?"')
-    project=$(echo "$entry" | jq -r '.value.project // "?"')
-    win=$(echo     "$entry" | jq -r '.value.window // "?"')
+    state=$(echo    "$entry" | jq -r '.value.state // "?"')
+    agent=$(echo    "$entry" | jq -r '.value.agent // "?"')
+    project=$(echo  "$entry" | jq -r '.value.project // "?"')
+    win=$(echo      "$entry" | jq -r '.value.window // "?"')
     pane_idx=$(echo "$entry" | jq -r '.value.pane_index // "?"')
-    turn=$(echo    "$entry" | jq -r '.value.turn_started_ts // 0')
-    printf '%-7s  %-8s  %-15s  %-12s  %-8s\n' \
-      "$state" "$agent" "$project" "$win:$pane_idx" "$(fmt_elapsed "$turn")"
+    turn=$(echo     "$entry" | jq -r '.value.turn_started_ts // 0')
+    color="$(_dash_color_for "$state")"
+    printf '│  %s%-7s%s  %-8s  %-15s  %-12s  %-8s │\n' \
+      "$color" "$state" "$_DASH_RESET" \
+      "$agent" "$project" "$win:$pane_idx" "$(fmt_elapsed "$turn")"
   done < <(jq -c 'to_entries[]' "$file")
 
-  echo
-  echo "[Enter] attach  [q] quit   (refresh: 1s)"
+  # Bottom
+  printf '└'
+  for i in $(seq 1 62); do printf '─'; done
+  printf '┘\n'
+
+  # Footer
+  printf '\n%s[j/k] select  [Enter] jump  [q] quit%s\n' "$_DASH_MUTED" "$_DASH_RESET"
 }
 
 # --render: just emit one frame and exit (used by tests)

@@ -29,3 +29,41 @@ setup() {
   run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
   assert_output --partial "no agents"
 }
+
+@test "dash render uses ANSI color for working state" {
+  state_init
+  state_register "%1" agent=claude project=foo state=working turn_started_ts="$(date +%s)"
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  assert_output --partial $'\033[33m'
+}
+
+@test "dash render uses ANSI color for stuck state" {
+  state_init
+  state_register "%1" agent=claude project=foo state=stuck turn_started_ts="$(date +%s)"
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  assert_output --partial $'\033[31m'
+}
+
+@test "dash render draws a unicode box frame" {
+  state_init
+  state_register "%1" agent=claude project=foo state=done
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  assert_output --partial "─"
+}
+
+@test "dash header shows agent count" {
+  state_init
+  state_register "%1" agent=claude project=foo state=working
+  state_register "%2" agent=claude project=bar state=done
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  assert_output --partial "2 agents"
+}
+
+@test "dash header shows DND indicator when flag present" {
+  mkdir -p "$XDG_RUNTIME_DIR/tmux-ai"
+  touch "$XDG_RUNTIME_DIR/tmux-ai/dnd.flag"
+  state_init
+  state_register "%1" agent=claude project=foo state=working
+  run "$PROJECT_ROOT/bin/tmux-ai-dash" --render
+  assert_output --partial "DND"
+}
