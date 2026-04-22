@@ -17,10 +17,38 @@ source "$TMUX_AI_LIB/config.sh"
 # shellcheck source=/dev/null
 source "$TMUX_AI_LIB/notify.sh"
 
+_last_assistant_text() {
+  # Read the transcript (JSONL, one message per line) and emit the text
+  # of the LAST text-block in the LAST assistant message. Empty if the
+  # file doesn't exist, has no assistant text, or is malformed. Scans
+  # only the last 500 lines to stay cheap on long sessions.
+  local transcript="$1"
+  [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
+  tail -n 500 "$transcript" 2>/dev/null \
+    | awk '/"type":"assistant"/{last=$0} END{if(last!="")print last}' \
+    | jq -r '.message.content // [] | [.[] | select(.type=="text") | .text] | last // empty' 2>/dev/null
+}
+
+_ends_with_question() {
+  # True iff the (possibly multi-line) text ends in "?" after stripping
+  # trailing whitespace. Used to classify a Stop event as "turn ended
+  # with a question to the user" vs "turn genuinely done".
+  local text="$1"
+  [[ "$text" =~ \?[[:space:]]*$ ]]
+}
+
 main() {
   local event="${1:-}" pane="${2:-}"
   [ -n "$event" ] && [ -n "$pane" ] || { tmux_ai_log "notify: missing args"; return 0; }
   shift 2 || true
+
+  # Claude Code pipes event JSON to hook commands via stdin. Read it
+  # best-effort — manual invocations or tests without a pipe leave it
+  # empty, in which case we fall through to legacy behavior.
+  local hook_json=""
+  if [ ! -t 0 ]; then
+    hook_json="$(cat 2>/dev/null || true)"
+  fi
 
   local agent project now
   agent="$(state_get "$pane" agent)"
@@ -51,11 +79,25 @@ main() {
       fi
       ;;
     stop)
-      state_set "$pane" state done
+      # Stop fires whenever the assistant turn ends — including when the
+      # turn ends with a plain-text question (e.g., superpowers skills
+      # like brainstorming). Inspect the transcript to tell "I'm done"
+      # from "I'm waiting on an answer".
       state_set "$pane" last_byte_ts "$now"
-      notify_desktop "${agent:-agent} — done" "${project:-(unknown project)}"
-      notify_sound done
-      notify_push "${agent:-agent} — done" "${project:-(unknown project)}"
+      local transcript_path last_text
+      transcript_path="$(printf '%s' "$hook_json" | jq -r '.transcript_path // empty' 2>/dev/null)"
+      last_text="$(_last_assistant_text "$transcript_path")"
+      if _ends_with_question "$last_text"; then
+        state_set "$pane" state waiting
+        notify_desktop "${agent:-agent} — needs input" "${project:-(unknown project)}"
+        notify_sound waiting
+        notify_push "${agent:-agent} — needs input" "${project:-(unknown project)}"
+      else
+        state_set "$pane" state done
+        notify_desktop "${agent:-agent} — done" "${project:-(unknown project)}"
+        notify_sound done
+        notify_push "${agent:-agent} — done" "${project:-(unknown project)}"
+      fi
       ;;
     notification)
       # Claude fires Notification for BOTH mid-turn permission prompts

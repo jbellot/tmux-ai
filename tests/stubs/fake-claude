@@ -7,10 +7,12 @@ set -u
 : "${TMUX_AI_NOTIFY_BIN:?must be set}"
 : "${TMUX_PANE:?must be set}"
 
-# Fire session_start immediately on launch
-"$TMUX_AI_NOTIFY_BIN" session_start "$TMUX_PANE"
+# Fire session_start immediately on launch. Redirect the subprocess
+# stdin so tmux-ai-notify can't drain our event loop — real Claude Code
+# pipes hook JSON via stdin, which the notify script now consumes.
+"$TMUX_AI_NOTIFY_BIN" session_start "$TMUX_PANE" </dev/null
 
 while IFS= read -r event; do
   [ -n "$event" ] || continue
-  "$TMUX_AI_NOTIFY_BIN" "$event" "$TMUX_PANE"
+  "$TMUX_AI_NOTIFY_BIN" "$event" "$TMUX_PANE" </dev/null
 done

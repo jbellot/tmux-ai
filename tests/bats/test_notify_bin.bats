@@ -40,9 +40,110 @@ S
   state_init
   state_register "%5" agent=claude state=working project=foo
 
-  "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5"
+  "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5" </dev/null
   run state_get "%5" state
   assert_output "done"
+}
+
+# Bug: skills like superpowers/brainstorming ask plain-text questions
+# at turn end. Stop fires → state=done, but the user still needs to
+# answer. If the last assistant message ends with "?", treat Stop as a
+# waiting signal, not a done signal.
+@test "stop with transcript ending in '?' transitions to waiting" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=working project=foo
+
+  local transcript="$BATS_TEST_TMPDIR/transcript.jsonl"
+  cat > "$transcript" <<'EOF'
+{"type":"user","message":{"role":"user","content":"hey"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Would you prefer X or Y?"}]}}
+EOF
+
+  printf '{"transcript_path":"%s","hook_event_name":"Stop"}' "$transcript" \
+    | "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5"
+
+  run state_get "%5" state
+  assert_output "waiting"
+}
+
+# Same hook path, non-question ending → stay with current done behavior.
+@test "stop with transcript ending in '.' transitions to done" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=working project=foo
+
+  local transcript="$BATS_TEST_TMPDIR/transcript.jsonl"
+  cat > "$transcript" <<'EOF'
+{"type":"user","message":{"role":"user","content":"hey"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All done."}]}}
+EOF
+
+  printf '{"transcript_path":"%s","hook_event_name":"Stop"}' "$transcript" \
+    | "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5"
+
+  run state_get "%5" state
+  assert_output "done"
+}
+
+# A turn whose final assistant block is a tool_use (no text at all) is
+# not a question — fall back to done.
+@test "stop with transcript containing only tool_use transitions to done" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=working project=foo
+
+  local transcript="$BATS_TEST_TMPDIR/transcript.jsonl"
+  cat > "$transcript" <<'EOF'
+{"type":"user","message":{"role":"user","content":"hey"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"x","name":"Read","input":{}}]}}
+EOF
+
+  printf '{"transcript_path":"%s","hook_event_name":"Stop"}' "$transcript" \
+    | "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5"
+
+  run state_get "%5" state
+  assert_output "done"
+}
+
+# A malformed transcript must NOT break the hook — degrade to the
+# previous "done" behavior rather than error out.
+@test "stop with malformed transcript degrades to done" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=working project=foo
+
+  local transcript="$BATS_TEST_TMPDIR/transcript.jsonl"
+  printf '{this is not valid json\n' > "$transcript"
+
+  printf '{"transcript_path":"%s","hook_event_name":"Stop"}' "$transcript" \
+    | "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5"
+
+  run state_get "%5" state
+  assert_output "done"
+}
+
+# Messages often wrap text in whitespace/newlines after the question
+# mark (markdown rendering, signoffs). Detection must tolerate that.
+@test "stop with trailing whitespace after '?' still detects question" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=working project=foo
+
+  local transcript="$BATS_TEST_TMPDIR/transcript.jsonl"
+  # Last text block ends with a real "?" then a trailing newline
+  printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Ready to proceed?\n\n"}]}}' > "$transcript"
+
+  printf '{"transcript_path":"%s","hook_event_name":"Stop"}' "$transcript" \
+    | "$PROJECT_ROOT/bin/tmux-ai-notify" stop "%5"
+
+  run state_get "%5" state
+  assert_output "waiting"
 }
 
 @test "notification event transitions agent to waiting" {
