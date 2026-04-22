@@ -37,6 +37,19 @@ main() {
       state_set "$pane" turn_started_ts "$now"
       state_set "$pane" last_byte_ts "$now"
       ;;
+    tool_use)
+      # Fires from Claude's PreToolUse hook, right after the user
+      # approves a tool-permission prompt (or immediately, for
+      # auto-approved tools). Without this, state wedges on "waiting"
+      # for the rest of the turn. Guarded so a late/out-of-order event
+      # can't resurrect a pane the Stop hook already marked done.
+      local cur_state
+      cur_state="$(state_get "$pane" state)"
+      state_set "$pane" last_byte_ts "$now"
+      if [ "$cur_state" != "done" ]; then
+        state_set "$pane" state working
+      fi
+      ;;
     stop)
       state_set "$pane" state done
       state_set "$pane" last_byte_ts "$now"
@@ -76,4 +89,10 @@ main() {
 }
 
 { main "$@"; } 2>>"$XDG_STATE_HOME/tmux-ai/tmux-ai.log" || true
+
+# Force an immediate status-bar repaint so the glyph counts reflect the
+# state change within milliseconds instead of waiting up to status-interval
+# (default 2s) for the next tick. Best-effort: harmless outside tmux.
+tmux refresh-client -S 2>/dev/null || true
+
 exit 0

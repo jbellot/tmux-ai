@@ -82,6 +82,61 @@ S
   assert_output "idle"
 }
 
+# The main bug fix: when Claude asks for tool-permission (Notification
+# → waiting) and the user approves, Claude fires PreToolUse just before
+# running the tool. Without a hook here, state wedges on "waiting" until
+# Stop fires at end of turn. tool_use must transition back to working.
+@test "tool_use transitions waiting agent to working" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=waiting project=foo turn_started_ts=100
+
+  "$PROJECT_ROOT/bin/tmux-ai-notify" tool_use "%5"
+  run state_get "%5" state
+  assert_output "working"
+}
+
+# tool_use fires for every tool call, including auto-approved ones
+# mid-turn. Running it on an already-working pane must be a no-op,
+# not a state flicker.
+@test "tool_use on working agent stays working" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=working project=foo
+
+  "$PROJECT_ROOT/bin/tmux-ai-notify" tool_use "%5"
+  run state_get "%5" state
+  assert_output "working"
+}
+
+# A late/out-of-order PreToolUse arriving after Stop must NOT
+# resurrect a finished pane. Same guard pattern as notification.
+@test "tool_use after stop does NOT overwrite done state" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=done project=foo
+
+  "$PROJECT_ROOT/bin/tmux-ai-notify" tool_use "%5"
+  run state_get "%5" state
+  assert_output "done"
+}
+
+# tool_use fires mid-turn, so it must NOT reset turn_started_ts — the
+# "elapsed" column in the dashboard would reset on every tool call.
+@test "tool_use preserves turn_started_ts" {
+  source "$PROJECT_ROOT/lib/common.sh"
+  source "$PROJECT_ROOT/lib/state.sh"
+  state_init
+  state_register "%5" agent=claude state=waiting project=foo turn_started_ts=1000
+
+  "$PROJECT_ROOT/bin/tmux-ai-notify" tool_use "%5"
+  run state_get "%5" turn_started_ts
+  assert_output "1000"
+}
+
 @test "pane_exited unregisters the pane" {
   source "$PROJECT_ROOT/lib/common.sh"
   source "$PROJECT_ROOT/lib/state.sh"

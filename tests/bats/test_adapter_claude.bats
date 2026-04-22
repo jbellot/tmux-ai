@@ -14,12 +14,12 @@ setup() {
   export TMUX_AI_NOTIFY_BIN="$PROJECT_ROOT/bin/tmux-ai-notify"
 }
 
-@test "claude_register_hooks writes a settings file containing the 4 hooks" {
+@test "claude_register_hooks writes a settings file containing all lifecycle hooks" {
   local settings
   settings="$(claude_register_hooks "%5")"
   [ -f "$settings" ]
   run jq -r '.hooks | keys | sort | join(",")' "$settings"
-  assert_output "Notification,SessionStart,Stop,UserPromptSubmit"
+  assert_output "Notification,PreToolUse,SessionStart,Stop,UserPromptSubmit"
 }
 
 @test "generated hook command invokes tmux-ai-notify with correct event" {
@@ -27,6 +27,13 @@ setup() {
   settings="$(claude_register_hooks "%5")"
   run jq -r '.hooks.Stop[0].hooks[0].command' "$settings"
   assert_output --partial "tmux-ai-notify stop \"%5\""
+}
+
+@test "PreToolUse hook invokes tmux-ai-notify tool_use" {
+  local settings
+  settings="$(claude_register_hooks "%5")"
+  run jq -r '.hooks.PreToolUse[0].hooks[0].command' "$settings"
+  assert_output --partial "tmux-ai-notify tool_use \"%5\""
 }
 
 @test "claude_uninstall_hooks removes the settings file" {

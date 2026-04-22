@@ -29,6 +29,7 @@ claude_register_hooks() {
       hooks: {
         SessionStart:     [{hooks: [{type:"command", command: ($notify + " session_start \"" + $pane + "\"")}]}],
         UserPromptSubmit: [{hooks: [{type:"command", command: ($notify + " prompt_submit \"" + $pane + "\"")}]}],
+        PreToolUse:       [{hooks: [{type:"command", command: ($notify + " tool_use \"" + $pane + "\"")}]}],
         Stop:             [{hooks: [{type:"command", command: ($notify + " stop \"" + $pane + "\"")}]}],
         Notification:     [{hooks: [{type:"command", command: ($notify + " notification \"" + $pane + "\"")}]}]
       }
