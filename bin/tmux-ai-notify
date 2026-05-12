@@ -121,6 +121,12 @@ main() {
       notify_sound stuck
       ;;
     pane_exited)
+      # Drop the per-pane claude settings file too — otherwise the
+      # runtime dir accumulates orphan JSON files for every agent pane
+      # that has ever existed. rm is idempotent: panes registered with
+      # the generic/observer adapter never had a settings file, so this
+      # is a no-op for them.
+      rm -f "$(tmux_ai_runtime_dir)/claude-settings/${pane//\//_}.json" 2>/dev/null || true
       state_unregister "$pane"
       ;;
     *)

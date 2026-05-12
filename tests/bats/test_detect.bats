@@ -26,7 +26,7 @@ S
   : > "$TMUX_STUB_RESPONSES"
 }
 
-@test "auto-register: unknown pane running claude gets registered with generic adapter" {
+@test "auto-register: unknown pane running claude gets registered with observer adapter" {
   state_init
   # tmux list-panes returns one pane %10 running 'claude' with cwd /tmp
   cat > "$TMUX_STUB_RESPONSES" <<EOF
@@ -35,8 +35,42 @@ EOF
   "$PROJECT_ROOT/bin/tmux-ai-detect"
   run state_get "%10" agent
   assert_output "claude"
+  # Auto-detected claude panes skip the generic content-hash heuristic —
+  # without hooks installed, generic_tick would spuriously fire
+  # stop→done whenever the pane sat idle for idle_after_seconds.
   run state_get "%10" adapter
-  assert_output "generic"
+  assert_output "observer"
+}
+
+@test "migrate: stale claude panes on adapter=generic get upgraded to observer" {
+  state_init
+  # Simulate a pre-fix registry entry: auto-detected claude on generic,
+  # stuck in the "done" state that the bug produced.
+  state_register "%7" agent=claude adapter=generic state=done \
+    last_content_hash=abc123 last_byte_ts=1000
+  cat > "$TMUX_STUB_RESPONSES" <<EOF
+list-panes::%7 claude /tmp main 1.0 s1
+EOF
+  "$PROJECT_ROOT/bin/tmux-ai-detect"
+  run state_get "%7" adapter
+  assert_output "observer"
+  # State is reset to idle so the bogus "done" glyph clears on the next
+  # status-bar tick.
+  run state_get "%7" state
+  assert_output "idle"
+}
+
+@test "migrate: spawned adapter=claude panes are not touched" {
+  state_init
+  state_register "%9" agent=claude adapter=claude state=waiting
+  cat > "$TMUX_STUB_RESPONSES" <<EOF
+list-panes::%9 claude /tmp main 1.0 s1
+EOF
+  "$PROJECT_ROOT/bin/tmux-ai-detect"
+  run state_get "%9" adapter
+  assert_output "claude"
+  run state_get "%9" state
+  assert_output "waiting"
 }
 
 @test "detect skips already-registered panes" {
@@ -80,4 +114,21 @@ EOF
   # %10 should remain
   run bash -c "jq 'has(\"%10\")' '$state_file'"
   assert_output "true"
+}
+
+@test "detect sweeps orphan claude-settings files for panes not in the registry" {
+  state_init
+  local settings_dir
+  settings_dir="$(tmux_ai_runtime_dir)/claude-settings"
+  mkdir -p "$settings_dir"
+  # %12 is registered (still alive), %13 is an orphan (pane long gone)
+  state_register "%12" agent=claude adapter=claude state=idle
+  printf '{}' > "$settings_dir/%12.json"
+  printf '{}' > "$settings_dir/%13.json"
+  cat > "$TMUX_STUB_RESPONSES" <<EOF
+list-panes::%12 claude /tmp main 1.0 s1
+EOF
+  "$PROJECT_ROOT/bin/tmux-ai-detect"
+  [ -f "$settings_dir/%12.json" ]
+  [ ! -f "$settings_dir/%13.json" ]
 }

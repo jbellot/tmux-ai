@@ -17,9 +17,23 @@ export TMUX_AI_NOTIFY_BIN="${TMUX_AI_NOTIFY_BIN:-$_BIN_DIR/tmux-ai-notify}"
 
 KNOWN_AGENTS_RE='^(claude|opencode)$'
 
+# Claude only emits reliable turn boundaries via its hooks (wired up by
+# tmux-ai-spawn through --settings). A pane we merely *observed* running
+# claude has no hooks installed, so the content-hash heuristic in
+# generic_tick would keep firing spurious stop→done transitions (and the
+# matching desktop notifications). Route those panes to the observer
+# adapter, which tick_all skips — they stay visible in the dash as idle
+# and never pollute the status bar.
+_adapter_for_agent() {
+  case "$1" in
+    claude) printf 'observer\n' ;;
+    *)      printf 'generic\n'  ;;
+  esac
+}
+
 auto_detect() {
   # tmux list-panes -a -F "#{pane_id} #{pane_current_command} #{pane_current_path} #{window_name} #{window_index}.#{pane_index} #{session_name}"
-  local line pane cmd cwd win idx sess project
+  local line pane cmd cwd win idx sess project adapter
   while IFS=' ' read -r pane cmd cwd win idx sess; do
     [ -n "$pane" ] || continue
     [[ "$cmd" =~ $KNOWN_AGENTS_RE ]] || continue
@@ -28,6 +42,7 @@ auto_detect() {
       continue
     fi
     project="$(basename "$cwd")"
+    adapter="$(_adapter_for_agent "$cmd")"
     state_register "$pane" \
       agent="$cmd" \
       project="$project" \
@@ -36,11 +51,22 @@ auto_detect() {
       pane_index="$idx" \
       session="$sess" \
       state=idle \
-      adapter=generic \
+      adapter="$adapter" \
       last_content_hash="" \
       last_byte_ts="$(date +%s)"
-    tmux_ai_log "detect: auto-registered $pane ($cmd in $project)"
+    tmux_ai_log "detect: auto-registered $pane ($cmd in $project, adapter=$adapter)"
   done < <(tmux list-panes -a -F "#{pane_id} #{pane_current_command} #{pane_current_path} #{window_name} #{window_index}.#{pane_index} #{session_name}" 2>/dev/null)
+}
+
+# One-shot migration: pre-observer-adapter installs auto-registered claude
+# panes as adapter=generic, leaving them vulnerable to spurious done flips.
+# Rewrite them in place so the fix applies to already-running sessions
+# without requiring the user to unregister anything by hand.
+migrate_generic_claude() {
+  _state_with_lock '
+    (.[] | select(.agent == "claude" and .adapter == "generic")) |=
+      (.adapter = "observer" | .state = "idle")
+  '
 }
 
 tick_all() {
@@ -50,9 +76,30 @@ tick_all() {
     adapter="$(state_get "$pane" adapter)"
     case "$adapter" in
       generic) generic_tick "$pane" ;;
-      *) : ;;  # hook-driven adapters update state on their own
+      *) : ;;  # claude / observer / other hook-driven adapters self-update
     esac
   done < <(state_list)
+}
+
+# Remove stale per-pane claude-settings files for panes no longer in the
+# registry. These files are normally cleaned by the pane_exited hook, but
+# historical versions didn't, so cold starts may find orphans lying
+# around. Runs after gc_dead_panes so the registry already reflects
+# reality.
+gc_orphan_claude_settings() {
+  local dir f fname pane state_file
+  dir="$(tmux_ai_runtime_dir)/claude-settings"
+  [ -d "$dir" ] || return 0
+  state_file="$(_state_file)"
+  for f in "$dir"/*.json; do
+    [ -f "$f" ] || continue
+    fname="${f##*/}"
+    pane="${fname%.json}"
+    pane="${pane//_/\/}"
+    if ! jq -e --arg p "$pane" 'has($p)' "$state_file" >/dev/null 2>&1; then
+      rm -f "$f"
+    fi
+  done
 }
 
 # Remove registry entries for panes tmux no longer knows about.
@@ -71,7 +118,9 @@ gc_dead_panes() {
 
 main() {
   state_init
+  migrate_generic_claude
   gc_dead_panes
+  gc_orphan_claude_settings
   auto_detect
   tick_all
 }
