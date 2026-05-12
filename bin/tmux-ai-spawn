@@ -46,7 +46,7 @@ main() {
   project="$(basename "$pdir")"
 
   # Create the pane first so we know its id
-  pane=$(tmux split-window -h -c "$pdir" -P -F '#{pane_id}' 2>/dev/null || echo "")
+  pane=$(tmux split-window -v -c "$pdir" -P -F '#{pane_id}' 2>/dev/null || echo "")
   [ -n "$pane" ] || { echo "failed to create pane" >&2; exit 1; }
 
   # Register in state
